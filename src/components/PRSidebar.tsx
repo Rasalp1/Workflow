@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { PRWithGates } from '@/types';
-import { GitPullRequest, CheckCircle2, AlertCircle, Clock, Layers } from 'lucide-react';
+import { GitPullRequest, CheckCircle2, AlertCircle, Clock, Layers, AlertTriangle } from 'lucide-react';
 
 interface PRSidebarProps {
   prsWithGates: PRWithGates[];
@@ -45,9 +45,16 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({ prsWithGates, activePRId, 
                   <span className="text-[11px] font-semibold text-slate-400 group-hover:text-slate-300 truncate max-w-[170px]" title={pr.repo_full_name}>
                     {pr.repo_name}
                   </span>
-                  <span className="text-xs font-mono font-bold text-purple-400 bg-purple-500/10 px-1.5 py-0.2 rounded border border-purple-500/20 shrink-0">
-                    #{pr.number}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    {pr.has_merge_conflicts && (
+                      <span className="text-[10px] font-mono font-bold text-rose-300 bg-rose-500/20 px-1 py-0.2 rounded border border-rose-500/40 shrink-0" title="Merge Conflicts">
+                        Conflict
+                      </span>
+                    )}
+                    <span className="text-xs font-mono font-bold text-purple-400 bg-purple-500/10 px-1.5 py-0.2 rounded border border-purple-500/20 shrink-0">
+                      #{pr.number}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="text-xs font-medium text-slate-200 group-hover:text-indigo-300 line-clamp-2 leading-snug">
@@ -56,22 +63,23 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({ prsWithGates, activePRId, 
 
                 <div className="flex items-center justify-between pt-1 text-[11px] border-t border-slate-800/40">
                   <div className="flex items-center gap-1.5">
-                    {pr.checks_status === 'success' && (
+                    {pr.has_merge_conflicts ? (
+                      <span className="flex items-center gap-1 text-rose-400 font-bold">
+                        <AlertTriangle className="w-3 h-3" /> Conflicts
+                      </span>
+                    ) : pr.checks_status === 'success' ? (
                       <span className="flex items-center gap-1 text-emerald-400 font-medium">
                         <CheckCircle2 className="w-3 h-3" /> CI Passed
                       </span>
-                    )}
-                    {pr.checks_status === 'failure' && (
+                    ) : pr.checks_status === 'failure' ? (
                       <span className="flex items-center gap-1 text-rose-400 font-medium">
                         <AlertCircle className="w-3 h-3" /> CI Failing
                       </span>
-                    )}
-                    {pr.checks_status === 'pending' && (
+                    ) : pr.checks_status === 'pending' ? (
                       <span className="flex items-center gap-1 text-amber-400 font-medium">
                         <Clock className="w-3 h-3" /> Pending
                       </span>
-                    )}
-                    {pr.checks_status === 'unknown' && (
+                    ) : (
                       <span className="text-slate-500">CI N/A</span>
                     )}
                   </div>

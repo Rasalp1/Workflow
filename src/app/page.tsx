@@ -8,7 +8,7 @@ import { PRSidebar } from '@/components/PRSidebar';
 import { PromptModal } from '@/components/PromptModal';
 import { RulesEditorModal } from '@/components/RulesEditorModal';
 import { SettingsModal } from '@/components/SettingsModal';
-import { GitPullRequest, Search, RefreshCw, Key, ShieldAlert, Columns } from 'lucide-react';
+import { GitPullRequest, Search, RefreshCw, Key, ShieldAlert, Columns, MessageSquare } from 'lucide-react';
 
 export default function Dashboard() {
   const [prsWithGates, setPrsWithGates] = useState<PRWithGates[]>([]);
@@ -211,13 +211,13 @@ export default function Dashboard() {
   });
 
   // Sort PRs:
-  // 1. Top: PRs where user (Rasalp1) does NOT have the latest comment
-  // 2. Bottom: PRs where user (Rasalp1) HAS the latest comment
+  // 1. Top: PRs where user (Rasalp1) does NOT have the latest comment/description
+  // 2. Bottom: PRs where user (Rasalp1) HAS the latest comment/description
   // 3. Secondary sort: PR number descending
   const sortedPRs = [...searchFilteredPRs].sort((a, b) => {
     const targetUser = (currentUser || 'Rasalp1').toLowerCase();
-    const aLastUser = a.pr.last_comment?.user?.login?.toLowerCase();
-    const bLastUser = b.pr.last_comment?.user?.login?.toLowerCase();
+    const aLastUser = (a.pr.last_comment?.user?.login || a.pr.user.login).toLowerCase();
+    const bLastUser = (b.pr.last_comment?.user?.login || b.pr.user.login).toLowerCase();
 
     const aIsUserLast = aLastUser === targetUser;
     const bIsUserLast = bLastUser === targetUser;
@@ -236,6 +236,38 @@ export default function Dashboard() {
   const col2PRs = sortedPRs.filter(
     ({ pr }) => col2Repo === 'ALL' || pr.repo_full_name === col2Repo
   );
+
+  // Count & List PRs where target user (currentUser or Rasalp1) does NOT have the latest comment or description
+  const targetUser = (currentUser || 'Rasalp1').toLowerCase();
+  const prsWithoutOurLatestComment = searchFilteredPRs.filter(({ pr }) => {
+    const lastUser = (pr.last_comment?.user?.login || pr.user.login).toLowerCase();
+    return lastUser !== targetUser;
+  });
+
+  // Group PRs by repository for 2-column hover popover
+  const availableRepos = Array.from(
+    new Set([
+      ...monitoredRepos,
+      ...prsWithGates.map(({ pr }) => pr.repo_full_name),
+    ])
+  );
+
+  const reposMap: Record<string, typeof searchFilteredPRs> = {};
+  availableRepos.forEach((repo) => {
+    reposMap[repo] = [];
+  });
+
+  prsWithoutOurLatestComment.forEach((item) => {
+    const repoKey = item.pr.repo_full_name;
+    if (!reposMap[repoKey]) {
+      reposMap[repoKey] = [];
+    }
+    reposMap[repoKey].push(item);
+  });
+
+  const repoKeys = Object.keys(reposMap);
+  const col1ReposList = repoKeys.filter((_, idx) => idx % 2 === 0);
+  const col2ReposList = repoKeys.filter((_, idx) => idx % 2 === 1);
 
   return (
     <div className="h-screen flex flex-col bg-[#090d16] text-slate-100 overflow-hidden w-full">
@@ -264,6 +296,127 @@ export default function Dashboard() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500"
             />
+          </div>
+
+          {/* Large Stat Counter with 2-Column Hover Popover */}
+          <div className="relative group">
+            <div className="flex items-center gap-3.5 bg-gradient-to-r from-slate-900/90 via-slate-900/80 to-amber-950/20 border border-slate-800 hover:border-amber-500/40 px-4 py-2.5 rounded-xl shadow-lg shadow-black/20 transition-all cursor-pointer">
+              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-inner">
+                <MessageSquare className="w-5 h-5" />
+              </div>
+              <div className="flex items-baseline gap-2.5">
+                <span className="text-3xl font-black bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-200 bg-clip-text text-transparent tracking-tight">
+                  {prsWithoutOurLatestComment.length}
+                </span>
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold text-slate-200 leading-tight">
+                    PRs Awaiting Our Comment
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    Latest activity is not by @{currentUser || 'Rasalp1'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Hover Box Popover */}
+            <div className="absolute right-0 top-full pt-2 hidden group-hover:block z-50 w-80 sm:w-96">
+              <div className="glass-panel bg-slate-900/95 border border-slate-700/80 rounded-2xl p-4 shadow-2xl backdrop-blur-xl space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                    PRs Awaiting Comment ({prsWithoutOurLatestComment.length})
+                  </span>
+                  <span className="text-[10px] text-slate-400">Click # to jump</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Column 1 Header & Repo PRs */}
+                  <div className="space-y-3">
+                    {col1ReposList.map((repoName) => {
+                      const items = reposMap[repoName] || [];
+                      const displayTitle = repoName.split('/')[1] || repoName;
+                      return (
+                        <div key={repoName} className="space-y-1.5">
+                          <div
+                            className="text-[11px] font-extrabold text-indigo-400 truncate border-b border-indigo-500/20 pb-1 uppercase tracking-wider"
+                            title={repoName}
+                          >
+                            {displayTitle}
+                          </div>
+                          {items.length === 0 ? (
+                            <div className="text-[11px] text-slate-500 italic py-1 px-1">None</div>
+                          ) : (
+                            <div className="space-y-1">
+                              {items.map(({ pr }) => {
+                                const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
+                                return (
+                                  <button
+                                    key={pr.number}
+                                    onClick={() => handleSelectPR(cardId)}
+                                    className="w-full text-left px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-indigo-600/30 border border-slate-700/80 hover:border-indigo-500/50 text-slate-200 text-xs font-mono font-bold transition-all flex items-center justify-between group/pr"
+                                  >
+                                    <span className="text-indigo-300">#{pr.number}</span>
+                                    <span
+                                      className="text-[10px] text-slate-400 group-hover/pr:text-slate-200 font-sans font-normal truncate max-w-[100px]"
+                                      title={pr.title}
+                                    >
+                                      {pr.title}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Column 2 Header & Repo PRs */}
+                  <div className="space-y-3">
+                    {col2ReposList.map((repoName) => {
+                      const items = reposMap[repoName] || [];
+                      const displayTitle = repoName.split('/')[1] || repoName;
+                      return (
+                        <div key={repoName} className="space-y-1.5">
+                          <div
+                            className="text-[11px] font-extrabold text-purple-400 truncate border-b border-purple-500/20 pb-1 uppercase tracking-wider"
+                            title={repoName}
+                          >
+                            {displayTitle}
+                          </div>
+                          {items.length === 0 ? (
+                            <div className="text-[11px] text-slate-500 italic py-1 px-1">None</div>
+                          ) : (
+                            <div className="space-y-1">
+                              {items.map(({ pr }) => {
+                                const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
+                                return (
+                                  <button
+                                    key={pr.number}
+                                    onClick={() => handleSelectPR(cardId)}
+                                    className="w-full text-left px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-purple-600/30 border border-slate-700/80 hover:border-purple-500/50 text-slate-200 text-xs font-mono font-bold transition-all flex items-center justify-between group/pr"
+                                  >
+                                    <span className="text-purple-300">#{pr.number}</span>
+                                    <span
+                                      className="text-[10px] text-slate-400 group-hover/pr:text-slate-200 font-sans font-normal truncate max-w-[100px]"
+                                      title={pr.title}
+                                    >
+                                      {pr.title}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
