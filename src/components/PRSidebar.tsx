@@ -47,11 +47,7 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({
             let numberClasses = 'text-gray-500 bg-gray-100 border-gray-200';
             let titleClasses = 'text-gray-800 group-hover:text-gray-900';
 
-            if (isInProcess) {
-              containerClasses = 'bg-blue-50/90 border-blue-400 shadow-sm ring-1 ring-blue-300/60';
-              numberClasses = 'text-blue-900 bg-blue-100 border-blue-300 font-bold';
-              titleClasses = 'text-blue-950 font-semibold';
-            } else if (isBothActive) {
+            if (isBothActive) {
               containerClasses =
                 'bg-gradient-to-r from-blue-50/90 to-purple-50/90 border-indigo-300 shadow-sm ring-1 ring-indigo-200/60';
               numberClasses = 'text-indigo-800 bg-indigo-100 border-indigo-200 font-bold';

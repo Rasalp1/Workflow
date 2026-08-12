@@ -8,6 +8,7 @@ import { PRSidebar } from '@/components/PRSidebar';
 import { PromptModal } from '@/components/PromptModal';
 import { RulesEditorModal } from '@/components/RulesEditorModal';
 import { SettingsModal } from '@/components/SettingsModal';
+import { CloseWorktreesConfirmModal } from '@/components/CloseWorktreesConfirmModal';
 import { GitPullRequest, RefreshCw, Key, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 export default function Dashboard() {
@@ -40,6 +41,9 @@ export default function Dashboard() {
   } | null>(null);
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isCloseWorktreesModalOpen, setIsCloseWorktreesModalOpen] = useState(false);
+  const [isClosingWorktrees, setIsClosingWorktrees] = useState(false);
+  const [closeWorktreesError, setCloseWorktreesError] = useState<string | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [rules, setRules] = useState<LogicalGateRule[]>([]);
 
@@ -69,6 +73,15 @@ export default function Dashboard() {
     });
   };
 
+  const handleClearAllActiveAgents = () => {
+    setActiveAgentPRs({});
+    try {
+      localStorage.removeItem('workflow_active_agent_prs');
+    } catch (e) {
+      console.error('Failed to clear active agent sessions from localStorage:', e);
+    }
+  };
+
   // Fetch PRs and Gates
   const fetchPRs = React.useCallback(async () => {
     setIsLoading(true);
@@ -87,10 +100,16 @@ export default function Dashboard() {
         setMonitoredRepos(repos);
         setCurrentUser(data.currentUser || null);
 
-        // Auto-assign default repos to columns if not set
+        // Auto-assign default repos to columns if not set and ensure distinct selection
         if (repos.length > 0) {
-          setCol1Repo((prev) => (prev && repos.includes(prev) ? prev : repos[0]));
-          setCol2Repo((prev) => (prev && repos.includes(prev) ? prev : repos[1] || repos[0]));
+          const defaultCol1 = repos[0];
+          const defaultCol2 = repos.length > 1 ? repos[1] : repos[0];
+          setCol1Repo((prev) => (prev && repos.includes(prev) ? prev : defaultCol1));
+          setCol2Repo((prev) => {
+            const c1 = col1Repo || defaultCol1;
+            if (prev && repos.includes(prev) && prev !== c1) return prev;
+            return defaultCol2 !== c1 ? defaultCol2 : 'ALL';
+          });
         }
       }
     } catch (err: unknown) {
@@ -274,6 +293,10 @@ export default function Dashboard() {
 
     if (!inCol1 && !inCol2) {
       setCol2Repo(repoName);
+      if (col1Repo === repoName) {
+        const alt = monitoredRepos.find((r) => r !== repoName) || 'ALL';
+        setCol1Repo(col2Repo && col2Repo !== repoName ? col2Repo : alt);
+      }
       setActiveCol2PRId(cardId);
     }
 
@@ -299,6 +322,22 @@ export default function Dashboard() {
         }
       }
     }, 100);
+  };
+
+  const handleCol1RepoChange = (newRepo: string) => {
+    setCol1Repo(newRepo);
+    if (newRepo === col2Repo) {
+      const alt = monitoredRepos.find((r) => r !== newRepo) || 'ALL';
+      setCol2Repo(col1Repo && col1Repo !== newRepo ? col1Repo : alt);
+    }
+  };
+
+  const handleCol2RepoChange = (newRepo: string) => {
+    setCol2Repo(newRepo);
+    if (newRepo === col1Repo) {
+      const alt = monitoredRepos.find((r) => r !== newRepo) || 'ALL';
+      setCol1Repo(col2Repo && col2Repo !== newRepo ? col2Repo : alt);
+    }
   };
 
   const handleSaveRules = async (updatedRules: LogicalGateRule[]) => {
@@ -462,6 +501,32 @@ export default function Dashboard() {
     }
   };
 
+  const handleConfirmCloseAllWorktrees = async () => {
+    setIsClosingWorktrees(true);
+    setCloseWorktreesError(null);
+    try {
+      const res = await fetch('/api/terminal/close-worktrees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to close worktrees');
+      }
+      setIsCloseWorktreesModalOpen(false);
+      setActionBanner({
+        type: 'success',
+        message: 'Opened Antigravity IDE terminal and executed commands to close all worktrees!',
+      });
+      setTimeout(() => setActionBanner(null), 6000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to close worktrees in terminal';
+      setCloseWorktreesError(msg);
+    } finally {
+      setIsClosingWorktrees(false);
+    }
+  };
+
   // Count & List PRs where target user (currentUser or Rasalp1) does NOT have the latest comment or description
   const targetUser = (currentUser || 'Rasalp1').toLowerCase();
   const prsWithoutOurLatestComment = searchFilteredPRs.filter(({ pr }) => {
@@ -491,6 +556,7 @@ export default function Dashboard() {
         isLoading={isLoading}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenRules={() => setIsRulesModalOpen(true)}
+        onOpenCloseWorktreesModal={() => setIsCloseWorktreesModalOpen(true)}
         defaultAgent={defaultAgent}
         onChangeAgent={handleChangeDefaultAgent}
         currentUser={currentUser}
@@ -500,6 +566,7 @@ export default function Dashboard() {
         awaitingCommentItems={awaitingCommentItems}
         activeAgentPRs={activeAgentPRs}
         onClearActiveAgent={handleClearActiveAgent}
+        onClearAllActiveAgents={handleClearAllActiveAgents}
         onSelectPR={handleSelectPR}
       />
 
@@ -601,13 +668,15 @@ export default function Dashboard() {
                     <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Repo:</span>
                     <select
                       value={col1Repo}
-                      onChange={(e) => setCol1Repo(e.target.value)}
+                      onChange={(e) => handleCol1RepoChange(e.target.value)}
                       className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-blue-700 focus:outline-none focus:border-blue-400 cursor-pointer"
                     >
-                      <option value="ALL">All Repositories</option>
+                      <option value="ALL" disabled={col2Repo === 'ALL'}>
+                        All Repositories {col2Repo === 'ALL' ? '(Selected in Col 2)' : ''}
+                      </option>
                       {monitoredRepos.map((repo) => (
-                        <option key={repo} value={repo}>
-                          {repo}
+                        <option key={repo} value={repo} disabled={repo === col2Repo}>
+                          {repo} {repo === col2Repo ? '(Selected in Col 2)' : ''}
                         </option>
                       ))}
                     </select>
@@ -658,13 +727,15 @@ export default function Dashboard() {
                     <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Repo:</span>
                     <select
                       value={col2Repo}
-                      onChange={(e) => setCol2Repo(e.target.value)}
+                      onChange={(e) => handleCol2RepoChange(e.target.value)}
                       className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-purple-700 focus:outline-none focus:border-purple-400 cursor-pointer"
                     >
-                      <option value="ALL">All Repositories</option>
+                      <option value="ALL" disabled={col1Repo === 'ALL'}>
+                        All Repositories {col1Repo === 'ALL' ? '(Selected in Col 1)' : ''}
+                      </option>
                       {monitoredRepos.map((repo) => (
-                        <option key={repo} value={repo}>
-                          {repo}
+                        <option key={repo} value={repo} disabled={repo === col1Repo}>
+                          {repo} {repo === col1Repo ? '(Selected in Col 1)' : ''}
                         </option>
                       ))}
                     </select>
@@ -729,6 +800,20 @@ export default function Dashboard() {
         onClose={() => setIsSettingsModalOpen(false)}
         config={config}
         onSaveConfig={handleSaveConfig}
+      />
+
+      {/* Close All Worktrees Confirm Modal */}
+      <CloseWorktreesConfirmModal
+        isOpen={isCloseWorktreesModalOpen}
+        onClose={() => {
+          if (!isClosingWorktrees) {
+            setIsCloseWorktreesModalOpen(false);
+            setCloseWorktreesError(null);
+          }
+        }}
+        onConfirm={handleConfirmCloseAllWorktrees}
+        isClosing={isClosingWorktrees}
+        error={closeWorktreesError}
       />
     </div>
   );

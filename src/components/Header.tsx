@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ActiveAgentInfo, AgentType } from '@/types';
-import { GitPullRequest, RefreshCw, Sliders, Terminal, ShieldCheck, Cpu, Key, MessageSquare, X } from 'lucide-react';
+import { GitPullRequest, RefreshCw, Sliders, Terminal, ShieldCheck, Cpu, Key, MessageSquare, X, FolderX } from 'lucide-react';
+import { ClearAgentsModal } from '@/components/ClearAgentsModal';
 
 interface HeaderProps {
   onRefresh: () => void;
   isLoading: boolean;
   onOpenSettings: () => void;
   onOpenRules: () => void;
+  onOpenCloseWorktreesModal?: () => void;
   defaultAgent: AgentType;
   onChangeAgent: (agent: AgentType) => void;
   currentUser: string | null;
@@ -16,6 +18,7 @@ interface HeaderProps {
   theirsToHandleCount: number;
   activeAgentPRs?: Record<string, ActiveAgentInfo>;
   onClearActiveAgent?: (cardId: string) => void;
+  onClearAllActiveAgents?: () => void;
   onSelectPR: (cardId: string) => void;
 }
 
@@ -24,6 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
   isLoading,
   onOpenSettings,
   onOpenRules,
+  onOpenCloseWorktreesModal,
   defaultAgent,
   onChangeAgent,
   currentUser,
@@ -33,9 +37,11 @@ export const Header: React.FC<HeaderProps> = ({
   theirsToHandleCount,
   activeAgentPRs = {},
   onClearActiveAgent,
+  onClearAllActiveAgents,
   onSelectPR,
 }) => {
   const activeAgentCount = Object.keys(activeAgentPRs).length;
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-3 mb-6" style={{ boxShadow: '0 1px 3px 0 rgba(0,0,0,0.06)' }}>
@@ -61,9 +67,23 @@ export const Header: React.FC<HeaderProps> = ({
                 {prCount} Active PRs
               </span>
               {activeAgentCount > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 border border-blue-300 text-blue-800 font-semibold flex items-center gap-1.5 animate-pulse">
+                <span className="text-xs pl-2 pr-1 py-0.5 rounded-full bg-blue-100 border border-blue-300 text-blue-800 font-semibold flex items-center gap-1.5">
                   <RefreshCw className="w-3 h-3 text-blue-600 animate-spin" />
-                  {activeAgentCount} Agent{activeAgentCount > 1 ? 's' : ''} Working
+                  <span>{activeAgentCount} Agent{activeAgentCount > 1 ? 's' : ''} Working</span>
+                  {onClearAllActiveAgents && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsClearModalOpen(true);
+                      }}
+                      className="p-0.5 hover:bg-blue-200 text-blue-700 hover:text-blue-950 rounded-full transition-colors leading-none cursor-pointer flex items-center justify-center ml-0.5"
+                      title="Clear all agent sessions"
+                      aria-label="Clear all agent sessions"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
                 </span>
               )}
             </div>
@@ -219,6 +239,18 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Logic Gates</span>
           </button>
 
+          {/* Close All Worktrees Toggle */}
+          {onOpenCloseWorktreesModal && (
+            <button
+              onClick={onOpenCloseWorktreesModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-700 hover:text-rose-800 text-xs font-medium border border-rose-200 transition-all cursor-pointer shadow-2xs"
+              title="Close all git worktrees across monitored repos in Antigravity IDE terminal"
+            >
+              <FolderX className="w-3.5 h-3.5 text-rose-600" />
+              <span>Close all worktrees</span>
+            </button>
+          )}
+
           {/* Credentials Modal Toggle */}
           <button
             onClick={onOpenSettings}
@@ -239,6 +271,16 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Clear All Agents Confirmation Modal */}
+      {onClearAllActiveAgents && (
+        <ClearAgentsModal
+          isOpen={isClearModalOpen}
+          onClose={() => setIsClearModalOpen(false)}
+          onConfirm={onClearAllActiveAgents}
+          activeCount={activeAgentCount}
+        />
+      )}
     </header>
   );
 };
