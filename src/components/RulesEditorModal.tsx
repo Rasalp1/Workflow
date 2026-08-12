@@ -102,17 +102,17 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-      <div className="glass-panel rounded-2xl w-full max-w-4xl border border-slate-700/80 shadow-2xl overflow-hidden flex flex-col h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+      <div className="panel-raised rounded-xl w-full max-w-4xl border border-gray-200 shadow-2xl overflow-hidden flex flex-col h-[85vh]">
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-purple-600/20 text-purple-400 border border-purple-500/30">
-              <Sliders className="w-5 h-5" />
+            <div className="p-2 rounded-lg bg-purple-50 border border-purple-200 text-purple-600">
+              <Sliders className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-100">Logical Gates & Prompt Rules</h3>
-              <p className="text-xs text-slate-400">
+              <h3 className="text-sm font-semibold text-gray-900">Logical Gates & Prompt Rules</h3>
+              <p className="text-xs text-gray-500">
                 Define gate conditions for when action buttons appear on PR cards
               </p>
             </div>
@@ -120,23 +120,23 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Modal Body: Left Sidebar + Right Form */}
         <div className="flex-1 flex overflow-hidden">
           {/* Rules List Sidebar */}
-          <div className="w-1/3 border-r border-slate-800 p-4 space-y-3 bg-slate-950/40 overflow-y-auto">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Configured Rules ({editableRules.length})
+          <div className="w-1/3 border-r border-gray-100 p-4 space-y-2 bg-gray-50/60 overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-200 mb-1">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Rules ({editableRules.length})
               </span>
               <button
                 onClick={handleAddRule}
-                className="p-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 border border-indigo-500/30 text-xs font-semibold flex items-center gap-1 transition-colors"
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" /> Add
               </button>
@@ -146,70 +146,70 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
               <div
                 key={rule.id}
                 onClick={() => setSelectedRuleId(rule.id)}
-                className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
+                className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
                   selectedRuleId === rule.id
-                    ? 'bg-slate-800/90 border-indigo-500/80 shadow-md'
-                    : 'bg-slate-900/50 border-slate-800/80 hover:border-slate-700'
+                    ? 'bg-white border-blue-200 shadow-sm'
+                    : 'bg-white border-gray-200 hover:border-gray-300'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-200">{rule.buttonLabel}</span>
+                  <span className="text-xs font-semibold text-gray-800">{rule.buttonLabel}</span>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleToggleRule(rule.id);
                     }}
-                    className="text-slate-400 hover:text-indigo-400"
+                    className="text-gray-400 hover:text-blue-600"
                   >
                     {rule.enabled ? (
-                      <CheckSquare className="w-4 h-4 text-indigo-400" />
+                      <CheckSquare className="w-4 h-4 text-blue-500" />
                     ) : (
-                      <Square className="w-4 h-4 text-slate-600" />
+                      <Square className="w-4 h-4 text-gray-300" />
                     )}
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-400 line-clamp-1 mt-1">{rule.name}</p>
+                <p className="text-[11px] text-gray-400 line-clamp-1 mt-0.5">{rule.name}</p>
               </div>
             ))}
           </div>
 
           {/* Rule Details & Condition Editor */}
           {currentRule && (
-            <div className="flex-1 p-6 space-y-5 overflow-y-auto bg-slate-900/40">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="flex-1 p-5 space-y-5 overflow-y-auto bg-white">
+              <div className="flex items-center justify-between pb-3 border-b border-gray-100">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-100">{currentRule.name}</h4>
-                  <p className="text-xs text-slate-400">Rule ID: {currentRule.id}</p>
+                  <h4 className="text-sm font-semibold text-gray-900">{currentRule.name}</h4>
+                  <p className="text-xs text-gray-400 font-mono">ID: {currentRule.id}</p>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => handleDeleteRule(currentRule.id)}
-                  className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 border border-rose-500/20 text-xs flex items-center gap-1"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-200 text-xs font-medium transition-colors"
                 >
-                  <Trash2 className="w-4 h-4" /> Delete Rule
+                  <Trash2 className="w-3.5 h-3.5" /> Delete Rule
                 </button>
               </div>
 
               {/* General Properties */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-300">Button Label:</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-700">Button Label:</label>
                   <input
                     type="text"
                     value={currentRule.buttonLabel}
                     onChange={(e) => handleUpdateCurrentRule('buttonLabel', e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-800 focus:outline-none focus:border-blue-400 focus:bg-white transition-colors"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-300">Button Color Theme:</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-700">Button Color Theme:</label>
                   <select
                     value={currentRule.buttonColor || 'indigo'}
                     onChange={(e) => handleUpdateCurrentRule('buttonColor', e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                    className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-800 focus:outline-none focus:border-blue-400 transition-colors"
                   >
                     <option value="indigo">Indigo / Blue</option>
                     <option value="purple">Purple / Violet</option>
@@ -222,36 +222,36 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
 
               {/* Conditions Checklist */}
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-300">Gate Execution Conditions:</label>
-                <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3 text-xs">
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-200">
+                <label className="text-xs font-semibold text-gray-700">Gate Execution Conditions:</label>
+                <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-3 text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
                     <input
                       type="checkbox"
                       checked={!!currentRule.conditions.lastCommentNotCurrentUser}
                       onChange={(e) =>
                         handleUpdateConditions('lastCommentNotCurrentUser', e.target.checked)
                       }
-                      className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0"
+                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
                     />
                     <span>Last comment was left by someone other than the current user</span>
                   </label>
 
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-200">
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
                     <input
                       type="checkbox"
                       checked={!!currentRule.conditions.hasUnresolvedComments}
                       onChange={(e) => handleUpdateConditions('hasUnresolvedComments', e.target.checked)}
-                      className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0"
+                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
                     />
                     <span>PR contains review or discussion comments</span>
                   </label>
 
-                  <label className="flex items-center gap-2 cursor-pointer text-slate-200">
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
                     <input
                       type="checkbox"
                       checked={!!currentRule.conditions.checksFailing}
                       onChange={(e) => handleUpdateConditions('checksFailing', e.target.checked)}
-                      className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0"
+                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
                     />
                     <span>CI/CD status checks are failing</span>
                   </label>
@@ -261,10 +261,10 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
               {/* Prompt Template */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                    <Code className="w-4 h-4 text-purple-400" /> Prompt Template:
+                  <label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                    <Code className="w-3.5 h-3.5 text-purple-500" /> Prompt Template:
                   </label>
-                  <span className="text-[10px] text-slate-500 font-mono">
+                  <span className="text-[10px] text-gray-400 font-mono">
                     Vars: {'{pr_number}'}, {'{pr_title}'}, {'{repo_name}'}, {'{branch}'}, {'{last_comment_body}'}
                   </span>
                 </div>
@@ -273,7 +273,7 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
                   rows={7}
                   value={currentRule.promptTemplate}
                   onChange={(e) => handleUpdateCurrentRule('promptTemplate', e.target.value)}
-                  className="w-full p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-200 focus:outline-none focus:border-purple-500"
+                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-mono text-gray-800 focus:outline-none focus:border-purple-400 focus:bg-white transition-colors"
                 />
               </div>
             </div>
@@ -281,10 +281,10 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/60 flex items-center justify-end gap-3">
+        <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white transition-colors"
+            className="px-4 py-2 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
           >
             Cancel
           </button>
@@ -292,7 +292,7 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-all disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
             <span>{isSaving ? 'Saving Rules...' : 'Save Rule Engine Changes'}</span>

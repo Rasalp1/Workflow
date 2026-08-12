@@ -8,7 +8,7 @@ import { PRSidebar } from '@/components/PRSidebar';
 import { PromptModal } from '@/components/PromptModal';
 import { RulesEditorModal } from '@/components/RulesEditorModal';
 import { SettingsModal } from '@/components/SettingsModal';
-import { GitPullRequest, Search, RefreshCw, Key, ShieldAlert, Columns, MessageSquare } from 'lucide-react';
+import { GitPullRequest, RefreshCw, Key, ShieldAlert } from 'lucide-react';
 
 export default function Dashboard() {
   const [prsWithGates, setPrsWithGates] = useState<PRWithGates[]>([]);
@@ -22,8 +22,7 @@ export default function Dashboard() {
   const [col1Repo, setCol1Repo] = useState<string>('');
   const [col2Repo, setCol2Repo] = useState<string>('');
 
-  // Filters & Settings State
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  // Settings State
   const [defaultAgent, setDefaultAgent] = useState<AgentType>('codex');
 
   // Modals
@@ -194,20 +193,12 @@ export default function Dashboard() {
     }
   };
 
-  // Filtered PR list by search query & excluding bot accounts
+  // Filtered PR list — excluding bot accounts
   const searchFilteredPRs = prsWithGates.filter(({ pr }) => {
     const isBot =
       pr.user?.login === 'github-actions[bot]' ||
       pr.user?.login?.toLowerCase().includes('github-actions');
-    if (isBot) return false;
-
-    return (
-      searchQuery === '' ||
-      pr.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pr.user.login.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pr.head.ref.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pr.repo_full_name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    return !isBot;
   });
 
   // Sort PRs:
@@ -244,33 +235,21 @@ export default function Dashboard() {
     return lastUser !== targetUser;
   });
 
-  // Group PRs by repository for 2-column hover popover
-  const availableRepos = Array.from(
-    new Set([
-      ...monitoredRepos,
-      ...prsWithGates.map(({ pr }) => pr.repo_full_name),
-    ])
-  );
-
-  const reposMap: Record<string, typeof searchFilteredPRs> = {};
-  availableRepos.forEach((repo) => {
-    reposMap[repo] = [];
+  // Build awaiting-comment items for Header popover
+  const awaitingReposMap: Record<string, { number: number; title: string; cardId: string }[]> = {};
+  prsWithoutOurLatestComment.forEach(({ pr }) => {
+    const key = pr.repo_full_name;
+    if (!awaitingReposMap[key]) awaitingReposMap[key] = [];
+    awaitingReposMap[key].push({
+      number: pr.number,
+      title: pr.title,
+      cardId: `pr-card-${pr.repo_full_name}-${pr.number}`,
+    });
   });
-
-  prsWithoutOurLatestComment.forEach((item) => {
-    const repoKey = item.pr.repo_full_name;
-    if (!reposMap[repoKey]) {
-      reposMap[repoKey] = [];
-    }
-    reposMap[repoKey].push(item);
-  });
-
-  const repoKeys = Object.keys(reposMap);
-  const col1ReposList = repoKeys.filter((_, idx) => idx % 2 === 0);
-  const col2ReposList = repoKeys.filter((_, idx) => idx % 2 === 1);
+  const awaitingCommentItems = Object.entries(awaitingReposMap).map(([repoName, prs]) => ({ repoName, prs }));
 
   return (
-    <div className="h-screen flex flex-col bg-[#090d16] text-slate-100 overflow-hidden w-full">
+    <div className="h-screen flex flex-col bg-gray-50 text-gray-900 overflow-hidden w-full">
       {/* Header Bar */}
       <Header
         onRefresh={fetchPRs}
@@ -281,155 +260,25 @@ export default function Dashboard() {
         onChangeAgent={handleChangeDefaultAgent}
         currentUser={currentUser}
         prCount={searchFilteredPRs.length}
+        awaitingCommentCount={prsWithoutOurLatestComment.length}
+        theirsToHandleCount={searchFilteredPRs.length - prsWithoutOurLatestComment.length}
+        awaitingCommentItems={awaitingCommentItems}
+        onSelectPR={handleSelectPR}
       />
 
       {/* Main Container - Fills Remaining Screen Height */}
       <main className="flex-1 flex flex-col w-full px-6 overflow-hidden pb-5">
-        {/* Search & Filter Bar */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4 glass-panel p-4 rounded-2xl border border-slate-800 shrink-0">
-          <div className="relative w-full sm:w-96">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search PR title, author, branch across all repos..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500"
-            />
-          </div>
-
-          {/* Large Stat Counter with 2-Column Hover Popover */}
-          <div className="relative group">
-            <div className="flex items-center gap-3.5 bg-gradient-to-r from-slate-900/90 via-slate-900/80 to-amber-950/20 border border-slate-800 hover:border-amber-500/40 px-4 py-2.5 rounded-xl shadow-lg shadow-black/20 transition-all cursor-pointer">
-              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-inner">
-                <MessageSquare className="w-5 h-5" />
-              </div>
-              <div className="flex items-baseline gap-2.5">
-                <span className="text-3xl font-black bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-200 bg-clip-text text-transparent tracking-tight">
-                  {prsWithoutOurLatestComment.length}
-                </span>
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-slate-200 leading-tight">
-                    PRs Awaiting Our Comment
-                  </span>
-                  <span className="text-[10px] text-slate-400">
-                    Latest activity is not by @{currentUser || 'Rasalp1'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Hover Box Popover */}
-            <div className="absolute right-0 top-full pt-2 hidden group-hover:block z-50 w-80 sm:w-96">
-              <div className="glass-panel bg-slate-900/95 border border-slate-700/80 rounded-2xl p-4 shadow-2xl backdrop-blur-xl space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                  <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                    <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
-                    PRs Awaiting Comment ({prsWithoutOurLatestComment.length})
-                  </span>
-                  <span className="text-[10px] text-slate-400">Click # to jump</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Column 1 Header & Repo PRs */}
-                  <div className="space-y-3">
-                    {col1ReposList.map((repoName) => {
-                      const items = reposMap[repoName] || [];
-                      const displayTitle = repoName.split('/')[1] || repoName;
-                      return (
-                        <div key={repoName} className="space-y-1.5">
-                          <div
-                            className="text-[11px] font-extrabold text-indigo-400 truncate border-b border-indigo-500/20 pb-1 uppercase tracking-wider"
-                            title={repoName}
-                          >
-                            {displayTitle}
-                          </div>
-                          {items.length === 0 ? (
-                            <div className="text-[11px] text-slate-500 italic py-1 px-1">None</div>
-                          ) : (
-                            <div className="space-y-1">
-                              {items.map(({ pr }) => {
-                                const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
-                                return (
-                                  <button
-                                    key={pr.number}
-                                    onClick={() => handleSelectPR(cardId)}
-                                    className="w-full text-left px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-indigo-600/30 border border-slate-700/80 hover:border-indigo-500/50 text-slate-200 text-xs font-mono font-bold transition-all flex items-center justify-between group/pr"
-                                  >
-                                    <span className="text-indigo-300">#{pr.number}</span>
-                                    <span
-                                      className="text-[10px] text-slate-400 group-hover/pr:text-slate-200 font-sans font-normal truncate max-w-[100px]"
-                                      title={pr.title}
-                                    >
-                                      {pr.title}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Column 2 Header & Repo PRs */}
-                  <div className="space-y-3">
-                    {col2ReposList.map((repoName) => {
-                      const items = reposMap[repoName] || [];
-                      const displayTitle = repoName.split('/')[1] || repoName;
-                      return (
-                        <div key={repoName} className="space-y-1.5">
-                          <div
-                            className="text-[11px] font-extrabold text-purple-400 truncate border-b border-purple-500/20 pb-1 uppercase tracking-wider"
-                            title={repoName}
-                          >
-                            {displayTitle}
-                          </div>
-                          {items.length === 0 ? (
-                            <div className="text-[11px] text-slate-500 italic py-1 px-1">None</div>
-                          ) : (
-                            <div className="space-y-1">
-                              {items.map(({ pr }) => {
-                                const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
-                                return (
-                                  <button
-                                    key={pr.number}
-                                    onClick={() => handleSelectPR(cardId)}
-                                    className="w-full text-left px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-purple-600/30 border border-slate-700/80 hover:border-purple-500/50 text-slate-200 text-xs font-mono font-bold transition-all flex items-center justify-between group/pr"
-                                  >
-                                    <span className="text-purple-300">#{pr.number}</span>
-                                    <span
-                                      className="text-[10px] text-slate-400 group-hover/pr:text-slate-200 font-sans font-normal truncate max-w-[100px]"
-                                      title={pr.title}
-                                    >
-                                      {pr.title}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* Error Alert */}
         {error && (
-          <div className="p-4 mb-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-3 shrink-0">
-            <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+          <div className="p-4 mb-4 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-3 shrink-0">
+            <ShieldAlert className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <h4 className="text-sm font-bold text-rose-300">GitHub API Notice</h4>
-              <p className="text-xs text-rose-200/90">{error}</p>
+              <h4 className="text-sm font-semibold text-rose-800">GitHub API Notice</h4>
+              <p className="text-xs text-rose-600">{error}</p>
               <button
                 onClick={() => setIsSettingsModalOpen(true)}
-                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-semibold border border-rose-500/40 transition-colors"
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors"
               >
                 <Key className="w-3.5 h-3.5" /> Configure GitHub Access Token
               </button>
@@ -440,24 +289,24 @@ export default function Dashboard() {
         {/* Loading Spinner State */}
         {isLoading && prsWithGates.length === 0 ? (
           <div className="py-24 text-center space-y-4 flex-1 flex flex-col justify-center items-center">
-            <RefreshCw className="w-8 h-8 text-indigo-400 animate-spin mx-auto" />
-            <p className="text-xs text-slate-400 font-medium">
+            <RefreshCw className="w-7 h-7 text-blue-500 animate-spin mx-auto" />
+            <p className="text-xs text-gray-400 font-medium">
               Fetching private repositories, PRs, and comments...
             </p>
           </div>
         ) : searchFilteredPRs.length === 0 ? (
           /* Empty State */
-          <div className="py-20 text-center glass-card rounded-2xl p-12 border border-slate-800 space-y-3 my-auto">
-            <GitPullRequest className="w-12 h-12 text-slate-600 mx-auto" />
-            <h3 className="text-base font-bold text-slate-300">No Open Pull Requests Found</h3>
-            <p className="text-xs text-slate-400 max-w-md mx-auto">
+          <div className="py-20 text-center panel rounded-xl p-12 space-y-3 my-auto">
+            <GitPullRequest className="w-10 h-10 text-gray-300 mx-auto" />
+            <h3 className="text-base font-semibold text-gray-700">No Open Pull Requests Found</h3>
+            <p className="text-xs text-gray-400 max-w-md mx-auto">
               There are currently no open PRs matching your filter across monitored repositories.
             </p>
             <button
               onClick={fetchPRs}
-              className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition-colors"
+              className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium border border-gray-200 transition-colors"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> Refresh Stream
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
           </div>
         ) : (
@@ -473,22 +322,22 @@ export default function Dashboard() {
             {/* Two Independent Scrolling Columns */}
             <div className="flex-1 w-full min-w-0 h-full grid grid-cols-1 lg:grid-cols-2 gap-6 items-start overflow-hidden">
               {/* COLUMN 1 */}
-              <div className="flex flex-col h-full min-h-0 w-full glass-panel rounded-2xl border border-slate-800/80 p-4 shadow-md overflow-hidden">
+              <div className="flex flex-col h-full min-h-0 w-full panel rounded-xl p-4 overflow-hidden">
                 {/* Column 1 Repository Selector Header */}
-                <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-800 shrink-0 mb-4">
+                <div className="flex items-center justify-between gap-3 pb-3 border-b border-gray-100 shrink-0 mb-3">
                   <div className="flex items-center gap-2">
-                    <GitPullRequest className="w-4 h-4 text-indigo-400" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                    <GitPullRequest className="w-3.5 h-3.5 text-blue-500" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
                       Column 1
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">Repo:</span>
+                    <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Repo:</span>
                     <select
                       value={col1Repo}
                       onChange={(e) => setCol1Repo(e.target.value)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-bold text-indigo-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-blue-700 focus:outline-none focus:border-blue-400 cursor-pointer"
                     >
                       <option value="ALL">All Repositories</option>
                       {monitoredRepos.map((repo) => (
@@ -503,8 +352,8 @@ export default function Dashboard() {
                 {/* Column 1 Scrollable Content */}
                 <div className="flex-1 overflow-y-auto pr-1 space-y-6">
                   {col1PRs.length === 0 ? (
-                    <div className="p-8 text-center glass-card rounded-2xl border border-slate-800 text-xs text-slate-400 italic">
-                      No open PRs found for <strong className="text-slate-300">{col1Repo}</strong>.
+                    <div className="p-8 text-center rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-400 italic">
+                      No open PRs found for <strong className="text-gray-600">{col1Repo}</strong>.
                     </div>
                   ) : (
                     col1PRs.map((item) => {
@@ -525,22 +374,22 @@ export default function Dashboard() {
               </div>
 
               {/* COLUMN 2 */}
-              <div className="flex flex-col h-full min-h-0 w-full glass-panel rounded-2xl border border-slate-800/80 p-4 shadow-md overflow-hidden">
+              <div className="flex flex-col h-full min-h-0 w-full panel rounded-xl p-4 overflow-hidden">
                 {/* Column 2 Repository Selector Header */}
-                <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-800 shrink-0 mb-4">
+                <div className="flex items-center justify-between gap-3 pb-3 border-b border-gray-100 shrink-0 mb-3">
                   <div className="flex items-center gap-2">
-                    <GitPullRequest className="w-4 h-4 text-purple-400" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                    <GitPullRequest className="w-3.5 h-3.5 text-purple-500" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
                       Column 2
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">Repo:</span>
+                    <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Repo:</span>
                     <select
                       value={col2Repo}
                       onChange={(e) => setCol2Repo(e.target.value)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-bold text-purple-300 focus:outline-none focus:border-purple-500 cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-purple-700 focus:outline-none focus:border-purple-400 cursor-pointer"
                     >
                       <option value="ALL">All Repositories</option>
                       {monitoredRepos.map((repo) => (
@@ -555,8 +404,8 @@ export default function Dashboard() {
                 {/* Column 2 Scrollable Content */}
                 <div className="flex-1 overflow-y-auto pr-1 space-y-6">
                   {col2PRs.length === 0 ? (
-                    <div className="p-8 text-center glass-card rounded-2xl border border-slate-800 text-xs text-slate-400 italic">
-                      No open PRs found for <strong className="text-slate-300">{col2Repo}</strong>.
+                    <div className="p-8 text-center rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-400 italic">
+                      No open PRs found for <strong className="text-gray-600">{col2Repo}</strong>.
                     </div>
                   ) : (
                     col2PRs.map((item) => {
