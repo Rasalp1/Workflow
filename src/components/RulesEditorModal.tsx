@@ -227,6 +227,54 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
                   <label className="flex items-center gap-2 cursor-pointer text-gray-700">
                     <input
                       type="checkbox"
+                      checked={!!currentRule.conditions.prOwnedByCurrentUser}
+                      onChange={(e) =>
+                        handleUpdateConditions('prOwnedByCurrentUser', e.target.checked)
+                      }
+                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
+                    />
+                    <span>PR is owned by current user (Rasalp1)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={!!currentRule.conditions.prOwnedByNonCurrentUser}
+                      onChange={(e) =>
+                        handleUpdateConditions('prOwnedByNonCurrentUser', e.target.checked)
+                      }
+                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
+                    />
+                    <span>PR is owned by someone other than current user</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={!!currentRule.conditions.hasNoComments}
+                      onChange={(e) =>
+                        handleUpdateConditions('hasNoComments', e.target.checked)
+                      }
+                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
+                    />
+                    <span>PR does not have any comments yet</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={!!currentRule.conditions.hasCommentsByCurrentUser}
+                      onChange={(e) =>
+                        handleUpdateConditions('hasCommentsByCurrentUser', e.target.checked)
+                      }
+                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
+                    />
+                    <span>PR has prior context/comment by current user (Rasalp1)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
+                    <input
+                      type="checkbox"
                       checked={!!currentRule.conditions.lastCommentNotCurrentUser}
                       onChange={(e) =>
                         handleUpdateConditions('lastCommentNotCurrentUser', e.target.checked)

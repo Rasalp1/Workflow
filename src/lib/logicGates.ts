@@ -33,6 +33,23 @@ export function evaluateGateRule(
     }
   }
 
+  // Condition: hasNoComments (PR has zero comments)
+  if (rule.conditions.hasNoComments) {
+    if ((pr.comments || []).length > 0) {
+      passed = false;
+    }
+  }
+
+  // Condition: hasCommentsByCurrentUser (PR has at least one comment by current user)
+  if (rule.conditions.hasCommentsByCurrentUser) {
+    const hasUserComment = (pr.comments || []).some(
+      (c) => c.user.login.toLowerCase() === effectiveUser.toLowerCase()
+    );
+    if (!hasUserComment) {
+      passed = false;
+    }
+  }
+
   // Condition 1: lastCommentNotCurrentUser
   // Treat the PR description (PR author) as the last activity when there are no comments.
   // A PR with no comments opened by someone else should pass (we haven't responded);

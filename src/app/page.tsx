@@ -136,9 +136,14 @@ export default function Dashboard() {
     }
 
     setTimeout(() => {
-      const element = document.getElementById(cardId);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const actionBarElement = document.getElementById(`${cardId}-action-bar`);
+      if (actionBarElement) {
+        actionBarElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      } else {
+        const element = document.getElementById(cardId);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
       }
     }, 100);
   };
@@ -236,13 +241,14 @@ export default function Dashboard() {
   });
 
   // Build awaiting-comment items for Header popover
-  const awaitingReposMap: Record<string, { number: number; title: string; cardId: string }[]> = {};
+  const awaitingReposMap: Record<string, { number: number; title: string; branchName: string; cardId: string }[]> = {};
   prsWithoutOurLatestComment.forEach(({ pr }) => {
     const key = pr.repo_full_name;
     if (!awaitingReposMap[key]) awaitingReposMap[key] = [];
     awaitingReposMap[key].push({
       number: pr.number,
       title: pr.title,
+      branchName: pr.head.ref,
       cardId: `pr-card-${pr.repo_full_name}-${pr.number}`,
     });
   });

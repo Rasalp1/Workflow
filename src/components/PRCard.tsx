@@ -337,14 +337,26 @@ export const PRCard: React.FC<PRCardProps> = ({ prWithGates, onTriggerGate, isSe
       </div>
 
       {/* Action Bar: Logic Gates & Spawner Buttons */}
-      <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-            Logical Gates:
+      <div id={`${cardId}-action-bar`} className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-mono font-semibold border border-blue-200">
+            #{pr.number}
           </span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold border border-gray-200">
-            {passedGates.length} / {evaluatedGates.length} Actionable
+          <span className="text-xs text-gray-600 font-mono bg-gray-50 px-2 py-0.5 rounded-md border border-gray-200 flex items-center gap-1.5" title={`${pr.head.ref} → ${pr.base.ref}`}>
+            <GitBranch className="w-3 h-3 text-gray-400" />
+            {pr.head.ref}
           </span>
+
+          {/* Worktree Button */}
+          <button
+            onClick={handleSpawnWorktree}
+            disabled={isSpawningWorktree}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white hover:bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-200 hover:border-blue-300 shadow-sm transition-all disabled:opacity-50"
+            title={`Spawn Git Worktree for branch "${pr.head.ref}" in Antigravity IDE`}
+          >
+            <GitBranch className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+            <span>{isSpawningWorktree ? 'Spawning...' : 'Worktree'}</span>
+          </button>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">

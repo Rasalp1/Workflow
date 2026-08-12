@@ -63,6 +63,8 @@ export interface LogicalGateRule {
   conditions: {
     prOwnedByCurrentUser?: boolean;
     prOwnedByNonCurrentUser?: boolean;
+    hasNoComments?: boolean;
+    hasCommentsByCurrentUser?: boolean;
     lastCommentNotCurrentUser?: boolean;
     hasMergeConflicts?: boolean;
     lastCommentAuthorLogin?: string; // Specific user login if set

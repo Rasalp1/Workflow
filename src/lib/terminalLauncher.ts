@@ -1,6 +1,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { writeFile, unlink } from 'fs/promises';
+import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { AgentType } from '@/types';
@@ -116,9 +117,11 @@ export async function spawnWorktreeInAntigravity({
     // Ensure worktrees container directory exists
     await execAsync(`mkdir -p "${worktreesDir}"`);
 
-    // Check if worktree directory already exists
+    // Check if worktree directory already exists on disk or in git worktree list
+    const directoryExists = existsSync(worktreePath);
     const { stdout: existingWorktrees } = await execAsync(`git -C "${cleanRepoPath}" worktree list`).catch(() => ({ stdout: '' }));
-    const alreadyExists = existingWorktrees.includes(worktreePath);
+    const registeredInGit = existingWorktrees.split('\n').some((line) => line.includes(worktreePath) || line.includes(branchSlug));
+    const alreadyExists = directoryExists || registeredInGit;
 
     if (!alreadyExists) {
       // Fetch latest commits from remote for branch
@@ -126,7 +129,14 @@ export async function spawnWorktreeInAntigravity({
       
       // Try worktree add: 1. branch directly, 2. new local branch from origin/branch, 3. fallback create
       const addCmd = `git -C "${cleanRepoPath}" worktree add "${worktreePath}" "${branchName}" 2>/dev/null || git -C "${cleanRepoPath}" worktree add "${worktreePath}" -b "${branchSlug}" "origin/${branchName}" 2>/dev/null || git -C "${cleanRepoPath}" worktree add "${worktreePath}" HEAD`;
-      await execAsync(addCmd);
+      try {
+        await execAsync(addCmd);
+      } catch (addError: any) {
+        // If git worktree add failed (e.g. branch or folder already exists elsewhere), but worktree directory exists on disk now, do not abort
+        if (!existsSync(worktreePath)) {
+          throw addError;
+        }
+      }
     }
 
     // Open a new terminal tab in the correct Antigravity IDE window (the one showing this repo).
@@ -183,9 +193,6 @@ tell application "System Events"
     end if
     set frontmost to true
     delay 0.3
-    -- Escape to blur any focused input (chat panel, search box, etc.)
-    key code 53
-    delay 0.2
     -- Open command palette (Cmd+Shift+P)
     key code 35 using {command down, shift down}
     delay 0.6
@@ -222,9 +229,12 @@ end tell
       await unlink(tmpScript).catch(() => {});
     }
 
+    const wasExisting = alreadyExists || existsSync(worktreePath);
     return {
       success: true,
-      message: `Worktree for branch "${branchName}" spawned at "${worktreePath}" and opened in Antigravity IDE`,
+      message: wasExisting
+        ? `Worktree for branch "${branchName}" already exists at "${worktreePath}" — opened terminal and navigated in Antigravity IDE`
+        : `Worktree for branch "${branchName}" spawned at "${worktreePath}" and opened in Antigravity IDE`,
       worktreePath,
     };
   } catch (error: any) {
