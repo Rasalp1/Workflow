@@ -24,18 +24,18 @@ export const PromptModal: React.FC<PromptModalProps> = ({
   gateResult,
   onConfirmSpawn,
 }) => {
+  const [prevGateId, setPrevGateId] = useState<string | null>(null);
   const [promptText, setPromptText] = useState('');
   const [selectedAgent, setSelectedAgent] = useState<AgentType>('codex');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  React.useEffect(() => {
-    if (gateResult && prWithGates) {
-      setPromptText(gateResult.generatedPrompt);
-      setSelectedAgent(gateResult.targetAgent || 'codex');
-      setStatusMessage(null);
-    }
-  }, [gateResult, prWithGates]);
+  if (gateResult && gateResult.rule.id !== prevGateId) {
+    setPrevGateId(gateResult.rule.id);
+    setPromptText(gateResult.generatedPrompt);
+    setSelectedAgent(gateResult.targetAgent || 'codex');
+    setStatusMessage(null);
+  }
 
   if (!isOpen || !prWithGates || !gateResult) return null;
 
@@ -85,10 +85,11 @@ export const PromptModal: React.FC<PromptModalProps> = ({
       setTimeout(() => {
         onClose();
       }, 1800);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Action failed.';
       setStatusMessage({
         type: 'error',
-        text: err.message || 'Action failed.',
+        text: msg,
       });
     } finally {
       setIsSubmitting(false);

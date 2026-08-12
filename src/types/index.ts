@@ -80,6 +80,8 @@ export interface AppConfig {
   defaultAgent: AgentType;
   monitoredRepos: string[]; // e.g. ["owner/repo1", "owner/repo2"]
   repoPaths: Record<string, string>; // "owner/repo" -> "/Users/..."
+  maskedToken?: string;
+  hasToken?: boolean;
 }
 
 export interface EvaluatedGateResult {

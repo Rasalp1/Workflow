@@ -17,16 +17,19 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
   rules,
   onSaveRules,
 }) => {
+  const [prevRules, setPrevRules] = useState<LogicalGateRule[] | null>(null);
   const [editableRules, setEditableRules] = useState<LogicalGateRule[]>([]);
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  React.useEffect(() => {
-    setEditableRules(JSON.parse(JSON.stringify(rules)));
-    if (rules.length > 0) {
-      setSelectedRuleId(rules[0].id);
+  if (rules && rules !== prevRules) {
+    setPrevRules(rules);
+    const cloned = JSON.parse(JSON.stringify(rules));
+    setEditableRules(cloned);
+    if (cloned.length > 0 && !selectedRuleId) {
+      setSelectedRuleId(cloned[0].id);
     }
-  }, [rules]);
+  }
 
   if (!isOpen) return null;
 
@@ -38,14 +41,14 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
     );
   };
 
-  const handleUpdateCurrentRule = (field: keyof LogicalGateRule, value: any) => {
+  const handleUpdateCurrentRule = (field: keyof LogicalGateRule, value: unknown) => {
     if (!currentRule) return;
     setEditableRules((prev) =>
       prev.map((r) => (r.id === currentRule.id ? { ...r, [field]: value } : r))
     );
   };
 
-  const handleUpdateConditions = (field: string, value: any) => {
+  const handleUpdateConditions = (field: string, value: unknown) => {
     if (!currentRule) return;
     setEditableRules((prev) =>
       prev.map((r) =>

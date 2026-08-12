@@ -36,7 +36,7 @@ export default function Dashboard() {
   const [rules, setRules] = useState<LogicalGateRule[]>([]);
 
   // Fetch PRs and Gates
-  const fetchPRs = async () => {
+  const fetchPRs = React.useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -64,15 +64,16 @@ export default function Dashboard() {
           setActivePRId(firstId);
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to load pull requests.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to load pull requests.';
+      setError(msg);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [activePRId]);
 
   // Fetch App Config & Rules
-  const fetchConfigAndRules = async () => {
+  const fetchConfigAndRules = React.useCallback(async () => {
     try {
       const [configRes, rulesRes] = await Promise.all([
         fetch('/api/config'),
@@ -91,12 +92,21 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Failed to load config/rules:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchConfigAndRules();
-    fetchPRs();
-  }, []);
+    let isMounted = true;
+    const init = async () => {
+      await fetchConfigAndRules();
+      if (isMounted) {
+        await fetchPRs();
+      }
+    };
+    init();
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchConfigAndRules, fetchPRs]);
 
   // IntersectionObserver to sync sidebar active state on scroll
   useEffect(() => {

@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { spawnWorktreeInAntigravity } from '@/lib/terminalLauncher';
 import { loadConfig } from '@/lib/storage';
+import { validateOrigin } from '@/lib/security';
 
 export async function POST(request: Request) {
   try {
+    validateOrigin(request);
     const body = await request.json();
     const { repoFullName, localPath, branchName } = body;
 
@@ -11,7 +13,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Branch name is required' }, { status: 400 });
     }
 
-    const config = loadConfig();
+    const config = await loadConfig();
     const targetPath =
       localPath ||
       config.repoPaths[repoFullName] ||
@@ -40,10 +42,11 @@ export async function POST(request: Request) {
       message: result.message,
       worktreePath: result.worktreePath,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('API /api/worktree/spawn Error:', error);
+    const msg = error instanceof Error ? error.message : 'Failed to spawn git worktree';
     return NextResponse.json(
-      { error: error.message || 'Failed to spawn git worktree' },
+      { error: msg },
       { status: 500 }
     );
   }

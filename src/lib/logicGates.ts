@@ -1,4 +1,4 @@
-import { AgentType, EvaluatedGateResult, LogicalGateRule, PullRequest } from '@/types';
+import type { AgentType, EvaluatedGateResult, LogicalGateRule, PullRequest } from '../types/index.ts';
 
 export function evaluateGateRule(
   rule: LogicalGateRule,
@@ -17,18 +17,18 @@ export function evaluateGateRule(
 
   let passed = true;
 
-  const effectiveUser = currentUserLogin || 'Rasalp1';
+  const effectiveUser = currentUserLogin ? currentUserLogin.toLowerCase() : null;
 
   // Condition: prOwnedByCurrentUser (PR owned by user)
   if (rule.conditions.prOwnedByCurrentUser) {
-    if (pr.user.login.toLowerCase() !== effectiveUser.toLowerCase()) {
+    if (!effectiveUser || pr.user.login.toLowerCase() !== effectiveUser) {
       passed = false;
     }
   }
 
   // Condition: prOwnedByNonCurrentUser (PR owned by someone else)
   if (rule.conditions.prOwnedByNonCurrentUser) {
-    if (pr.user.login.toLowerCase() === effectiveUser.toLowerCase()) {
+    if (effectiveUser && pr.user.login.toLowerCase() === effectiveUser) {
       passed = false;
     }
   }
@@ -42,22 +42,28 @@ export function evaluateGateRule(
 
   // Condition: hasCommentsByCurrentUser (PR has at least one comment by current user)
   if (rule.conditions.hasCommentsByCurrentUser) {
-    const hasUserComment = (pr.comments || []).some(
-      (c) => c.user.login.toLowerCase() === effectiveUser.toLowerCase()
-    );
-    if (!hasUserComment) {
+    if (!effectiveUser) {
       passed = false;
+    } else {
+      const hasUserComment = (pr.comments || []).some(
+        (c) => c.user.login.toLowerCase() === effectiveUser
+      );
+      if (!hasUserComment) {
+        passed = false;
+      }
     }
   }
 
   // Condition 1: lastCommentNotCurrentUser
   // Treat the PR description (PR author) as the last activity when there are no comments.
-  // A PR with no comments opened by someone else should pass (we haven't responded);
-  // a PR with no comments opened by us should fail (last activity is ours).
   if (rule.conditions.lastCommentNotCurrentUser) {
-    const lastActivityUser = (pr.last_comment?.user.login ?? pr.user.login).toLowerCase();
-    if (lastActivityUser === effectiveUser.toLowerCase()) {
+    if (!effectiveUser) {
       passed = false;
+    } else {
+      const lastActivityUser = (pr.last_comment?.user.login ?? pr.user.login).toLowerCase();
+      if (lastActivityUser === effectiveUser) {
+        passed = false;
+      }
     }
   }
 

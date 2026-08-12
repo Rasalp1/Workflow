@@ -7,14 +7,12 @@ import {
   GitPullRequest,
   User,
   Clock,
-  ExternalLink,
   AlertCircle,
   CheckCircle2,
   Terminal,
   Wrench,
   Eye,
   AlertTriangle,
-  Folder,
   Code2,
   FileCode,
   GitBranch,
@@ -55,8 +53,9 @@ export const PRCard: React.FC<PRCardProps> = ({ prWithGates, onTriggerGate, isSe
         setWorktreeStatus({ success: true, message: data.message || 'Worktree opened in Antigravity IDE!' });
         setTimeout(() => setWorktreeStatus(null), 6000);
       }
-    } catch (err: any) {
-      setWorktreeStatus({ success: false, message: err.message || 'Network error spawning worktree' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Network error spawning worktree';
+      setWorktreeStatus({ success: false, message: msg });
     } finally {
       setIsSpawningWorktree(false);
     }

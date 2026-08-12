@@ -1,6 +1,7 @@
-import fs from 'fs';
+import fs from 'fs/promises';
+import { existsSync } from 'fs';
 import path from 'path';
-import { AppConfig, LogicalGateRule } from '@/types';
+import { AgentType, AppConfig, LogicalGateRule } from '@/types';
 
 const DATA_DIR = path.join(process.cwd(), '.workflow-data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -10,7 +11,7 @@ export const DEFAULT_RULES: LogicalGateRule[] = [
   {
     id: 'address-issues',
     name: 'Address Review Issues',
-    description: 'PR owned by user (Rasalp1) with latest comment from someone else.',
+    description: 'PR owned by user with latest comment from someone else.',
     enabled: true,
     buttonLabel: 'Address Issues',
     buttonIcon: 'Wrench',
@@ -84,7 +85,7 @@ Instructions:
   {
     id: 'rebase-user-pr',
     name: 'Rebase User PR Branch',
-    description: 'PR owned by user (Rasalp1) that has merge conflicts.',
+    description: 'PR owned by user that has merge conflicts.',
     enabled: true,
     buttonLabel: 'Rebase',
     buttonIcon: 'GitBranch',
@@ -114,16 +115,24 @@ Fetch origin, run git rebase origin/{base_branch}, resolve any merge conflicts, 
   },
 ];
 
-function ensureDataDirExists() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+async function ensureDataDirExists() {
+  if (!existsSync(DATA_DIR)) {
+    await fs.mkdir(DATA_DIR, { recursive: true });
   }
 }
 
-export function loadConfig(): AppConfig {
-  ensureDataDirExists();
+async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
+  await ensureDataDirExists();
+  const tmpPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
+  const content = JSON.stringify(data, null, 2);
+  await fs.writeFile(tmpPath, content, 'utf-8');
+  await fs.rename(tmpPath, filePath);
+}
 
-  let envRepos = (process.env.MONITORED_REPOS || '')
+export async function loadConfig(): Promise<AppConfig> {
+  await ensureDataDirExists();
+
+  const envRepos = (process.env.MONITORED_REPOS || '')
     .split(',')
     .map((r) => r.trim())
     .filter(Boolean);
@@ -144,14 +153,15 @@ export function loadConfig(): AppConfig {
 
   const defaultConfig: AppConfig = {
     githubToken: process.env.GITHUB_TOKEN || '',
-    defaultAgent: (process.env.DEFAULT_AGENT as any) || 'codex',
+    defaultAgent: (process.env.DEFAULT_AGENT as AgentType) || 'codex',
     monitoredRepos: envRepos.length > 0 ? envRepos : ['OSRA-1/MEDSAM-production', 'Rasalp1/MedSAMapp'],
     repoPaths: envPaths,
   };
 
-  if (fs.existsSync(CONFIG_FILE)) {
+  if (existsSync(CONFIG_FILE)) {
     try {
-      const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      const fileContent = await fs.readFile(CONFIG_FILE, 'utf-8');
+      const data = JSON.parse(fileContent);
       return {
         ...defaultConfig,
         ...data,
@@ -165,16 +175,16 @@ export function loadConfig(): AppConfig {
   return defaultConfig;
 }
 
-export function saveConfig(config: AppConfig): void {
-  ensureDataDirExists();
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+export async function saveConfig(config: AppConfig): Promise<void> {
+  await atomicWriteJson(CONFIG_FILE, config);
 }
 
-export function loadRules(): LogicalGateRule[] {
-  ensureDataDirExists();
-  if (fs.existsSync(RULES_FILE)) {
+export async function loadRules(): Promise<LogicalGateRule[]> {
+  await ensureDataDirExists();
+  if (existsSync(RULES_FILE)) {
     try {
-      const rules = JSON.parse(fs.readFileSync(RULES_FILE, 'utf-8'));
+      const fileContent = await fs.readFile(RULES_FILE, 'utf-8');
+      const rules = JSON.parse(fileContent);
       if (Array.isArray(rules) && rules.length > 0) {
         return rules;
       }
@@ -185,7 +195,7 @@ export function loadRules(): LogicalGateRule[] {
   return DEFAULT_RULES;
 }
 
-export function saveRules(rules: LogicalGateRule[]): void {
-  ensureDataDirExists();
-  fs.writeFileSync(RULES_FILE, JSON.stringify(rules, null, 2), 'utf-8');
+export async function saveRules(rules: LogicalGateRule[]): Promise<void> {
+  await atomicWriteJson(RULES_FILE, rules);
 }
+

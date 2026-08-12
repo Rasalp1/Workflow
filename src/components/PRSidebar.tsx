@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { PRWithGates } from '@/types';
-import { GitPullRequest, CheckCircle2, AlertCircle, Clock, Layers, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Clock, Layers, AlertTriangle } from 'lucide-react';
 
 interface PRSidebarProps {
   prsWithGates: PRWithGates[];
