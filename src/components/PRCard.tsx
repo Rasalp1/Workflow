@@ -5,7 +5,6 @@ import { EvaluatedGateResult, PRWithGates } from '@/types';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import {
   GitPullRequest,
-  MessageSquare,
   User,
   Clock,
   ExternalLink,
@@ -159,7 +158,29 @@ export const PRCard: React.FC<PRCardProps> = ({ prWithGates, onTriggerGate, isSe
 
         {/* PR Status */}
         <div className="flex flex-col items-start md:items-end gap-2 shrink-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Merge Conflict & Mergeability Status */}
+            {pr.has_merge_conflicts ? (
+              <span
+                className="text-xs flex items-center gap-1 text-rose-300 bg-rose-500/20 px-2.5 py-1 rounded-full border border-rose-500/40 font-bold animate-pulse shadow-sm shadow-rose-950/50"
+                title={`Merge conflicts detected on branch ${pr.head.ref} against ${pr.base.ref}`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-400" /> Conflicts with {pr.base.ref}
+              </span>
+            ) : pr.mergeable_state === 'behind' ? (
+              <span
+                className="text-xs flex items-center gap-1 text-amber-300 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/30 font-medium"
+                title={`Branch ${pr.head.ref} is behind ${pr.base.ref}`}
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-400" /> Behind {pr.base.ref}
+              </span>
+            ) : pr.has_merge_conflicts === false || pr.mergeable_state === 'clean' ? (
+              <span className="text-xs flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 font-medium">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Mergeable Clean
+              </span>
+            ) : null}
+
+            {/* CI Status */}
             {pr.checks_status === 'success' && (
               <span className="text-xs flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 font-medium">
                 <CheckCircle2 className="w-3.5 h-3.5" /> CI Checks Passed
@@ -170,6 +191,7 @@ export const PRCard: React.FC<PRCardProps> = ({ prWithGates, onTriggerGate, isSe
                 <AlertCircle className="w-3.5 h-3.5" /> CI Checks Failing
               </span>
             )}
+
             <span className="text-xs text-slate-300 flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-full border border-slate-700">
               {pr.user.avatar_url ? (
                 <img src={pr.user.avatar_url} alt={pr.user.login} className="w-4 h-4 rounded-full" />
@@ -181,6 +203,37 @@ export const PRCard: React.FC<PRCardProps> = ({ prWithGates, onTriggerGate, isSe
           </div>
         </div>
       </div>
+
+      {/* High-Visibility Conflict Callout Banner */}
+      {pr.has_merge_conflicts && (
+        <div className="mt-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-lg shadow-rose-950/20">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400 shrink-0 mt-0.5 md:mt-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-rose-300 flex items-center gap-2">
+                Merge Conflicts Detected against <code className="bg-rose-950/60 px-1.5 py-0.5 rounded text-rose-200 font-mono text-xs">{pr.base.ref}</code>
+              </h4>
+              <p className="text-xs text-rose-300/80 mt-0.5 leading-relaxed">
+                Branch <span className="font-mono text-slate-100 font-semibold">{pr.head.ref}</span> cannot be automatically merged into <span className="font-mono text-slate-100 font-semibold">{pr.base.ref}</span>. Rebase or merge <span className="font-mono">{pr.base.ref}</span> to resolve conflict markers before deploying agent workflows.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+            <button
+              onClick={handleSpawnWorktree}
+              disabled={isSpawningWorktree}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600/30 hover:bg-rose-600/50 active:bg-rose-600/70 text-rose-100 text-xs font-bold border border-rose-500/50 transition-all shadow-sm disabled:opacity-50"
+              title={`Spawn Git Worktree for branch "${pr.head.ref}" to resolve conflicts`}
+            >
+              <GitBranch className="w-3.5 h-3.5 text-rose-300" />
+              <span>{isSpawningWorktree ? 'Opening Worktree...' : 'Resolve via Worktree'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Worktree Spawning Notification Banner */}
       {worktreeStatus && (
@@ -208,31 +261,23 @@ export const PRCard: React.FC<PRCardProps> = ({ prWithGates, onTriggerGate, isSe
         </div>
       )}
 
-      {/* PR Description Body */}
-      {pr.body && (
-        <div className="my-5 p-4 rounded-xl bg-slate-900/70 border border-slate-800/90">
-          <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <GitPullRequest className="w-3.5 h-3.5 text-indigo-400" /> Description
-          </h4>
-          <MarkdownRenderer content={pr.body} />
-        </div>
-      )}
-
-      {/* Full Width Comment History Section */}
-      <div className="my-6 space-y-4 w-full">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
-          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-purple-400" />
-            Full Conversation History ({pr.comments.length})
-          </h4>
-        </div>
+      {/* PR Description + Comment Thread — unified continuous flow */}
+      <div className="my-5 space-y-4 w-full">
+        {pr.body && (
+          <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/90">
+            <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <GitPullRequest className="w-3.5 h-3.5 text-indigo-400" /> Description
+            </h4>
+            <MarkdownRenderer content={pr.body} />
+          </div>
+        )}
 
         {pr.comments.length === 0 ? (
           <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/60 text-xs text-slate-400 italic text-center">
             No discussion comments recorded for this PR yet.
           </div>
         ) : (
-          <div className="space-y-4 w-full">
+          <div className="space-y-4 w-full" id="comment-thread">
             {pr.comments.map((comment) => (
               <div
                 key={comment.id}

@@ -34,10 +34,12 @@ export function evaluateGateRule(
   }
 
   // Condition 1: lastCommentNotCurrentUser
+  // Treat the PR description (PR author) as the last activity when there are no comments.
+  // A PR with no comments opened by someone else should pass (we haven't responded);
+  // a PR with no comments opened by us should fail (last activity is ours).
   if (rule.conditions.lastCommentNotCurrentUser) {
-    if (!pr.last_comment) {
-      passed = false;
-    } else if (pr.last_comment.user.login.toLowerCase() === effectiveUser.toLowerCase()) {
+    const lastActivityUser = (pr.last_comment?.user.login ?? pr.user.login).toLowerCase();
+    if (lastActivityUser === effectiveUser.toLowerCase()) {
       passed = false;
     }
   }

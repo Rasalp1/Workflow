@@ -1,5 +1,8 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { writeFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { AgentType } from '@/types';
 
 const execAsync = promisify(exec);
@@ -126,18 +129,98 @@ export async function spawnWorktreeInAntigravity({
       await execAsync(addCmd);
     }
 
-    // Launch Antigravity IDE pointing to worktreePath
+    // Open a new terminal tab in the correct Antigravity IDE window (the one showing this repo).
+    // If no window with this repo is open, launch it first.
+    const repoName = cleanRepoPath.split('/').pop() ?? '';
+    const ideCli = '/Applications/Antigravity IDE.app/Contents/Resources/app/bin/antigravity-ide';
+
     const appleScript = `
-      tell application "System Events"
-        if exists (process "Antigravity") then
-          tell process "Antigravity"
-            set frontmost to true
-          end tell
+set repoName to "${repoName}"
+set repoPath to "${cleanRepoPath}"
+set worktreePath to "${worktreePath}"
+set ideCli to "${ideCli}"
+
+-- Ensure the app is running
+tell application "Antigravity IDE"
+  activate
+end tell
+delay 0.5
+
+-- Find the window whose title contains the repo folder name
+set targetWindow to missing value
+tell application "System Events"
+  tell process "Antigravity IDE"
+    repeat with w in every window
+      if name of w contains repoName then
+        set targetWindow to w
+        exit repeat
+      end if
+    end repeat
+  end tell
+end tell
+
+-- If no matching window, open the repo in a new window and wait for it to load
+if targetWindow is missing value then
+  do shell script quoted form of ideCli & " --new-window " & quoted form of repoPath
+  delay 4
+  tell application "System Events"
+    tell process "Antigravity IDE"
+      repeat with w in every window
+        if name of w contains repoName then
+          set targetWindow to w
+          exit repeat
         end if
-      end tell
-      do shell script "open -a Antigravity \\"${worktreePath}\\""
-    `;
-    await execAsync(`osascript -e '${appleScript}'`);
+      end repeat
+    end tell
+  end tell
+end if
+
+-- Raise the matched window and open a terminal, then cd to worktree
+tell application "System Events"
+  tell process "Antigravity IDE"
+    if targetWindow is not missing value then
+      perform action "AXRaise" of targetWindow
+    end if
+    set frontmost to true
+    delay 0.3
+    -- Escape to blur any focused input (chat panel, search box, etc.)
+    key code 53
+    delay 0.2
+    -- Open command palette (Cmd+Shift+P)
+    key code 35 using {command down, shift down}
+    delay 0.6
+    -- Create a new terminal via command ID
+    keystroke "workbench.action.terminal.new"
+    delay 0.4
+    key code 36
+    delay 1.2
+    -- Type the cd command into the fresh terminal
+    keystroke "cd '" & worktreePath & "'"
+    key code 36
+  end tell
+end tell
+`;
+    const tmpScript = join(tmpdir(), `worktree-open-${Date.now()}.applescript`);
+    await writeFile(tmpScript, appleScript, 'utf8');
+    try {
+      await execAsync(`osascript "${tmpScript}"`);
+    } catch (scriptErr: any) {
+      // Error 1002 = Accessibility permission not granted
+      if (scriptErr.message?.includes('1002') || scriptErr.message?.includes('not allowed to send keystrokes')) {
+        // Open System Settings to the Accessibility pane so the user can grant permission
+        await execAsync(
+          `open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`
+        ).catch(() => {});
+        return {
+          success: false,
+          message: `Permission required: Please grant Accessibility access to your terminal in the System Settings window that just opened, then try again.`,
+          worktreePath,
+        };
+      }
+      throw scriptErr;
+    } finally {
+      await unlink(tmpScript).catch(() => {});
+    }
 
     return {
       success: true,
