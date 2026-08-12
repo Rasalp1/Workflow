@@ -4,6 +4,9 @@ import { evaluateGateRule } from '@/lib/logicGates';
 import { loadConfig, loadRules } from '@/lib/storage';
 import { PRWithGates } from '@/types';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET() {
   try {
     const config = await loadConfig();
@@ -48,12 +51,19 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      currentUser,
-      prsWithGates: allPRsWithGates,
-      monitoredRepos: config.monitoredRepos,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        currentUser,
+        prsWithGates: allPRsWithGates,
+        monitoredRepos: config.monitoredRepos,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0, must-revalidate',
+        },
+      }
+    );
   } catch (error: unknown) {
     console.error('API /api/prs Error:', error);
     const msg = error instanceof Error ? error.message : 'Failed to fetch PRs';

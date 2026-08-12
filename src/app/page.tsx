@@ -8,7 +8,7 @@ import { PRSidebar } from '@/components/PRSidebar';
 import { PromptModal } from '@/components/PromptModal';
 import { RulesEditorModal } from '@/components/RulesEditorModal';
 import { SettingsModal } from '@/components/SettingsModal';
-import { GitPullRequest, RefreshCw, Key, ShieldAlert } from 'lucide-react';
+import { GitPullRequest, RefreshCw, Key, ShieldAlert, ShieldCheck } from 'lucide-react';
 
 export default function Dashboard() {
   const [prsWithGates, setPrsWithGates] = useState<PRWithGates[]>([]);
@@ -45,7 +45,7 @@ export default function Dashboard() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/prs');
+      const res = await fetch(`/api/prs?t=${Date.now()}`, { cache: 'no-store' });
       const data = await res.json();
 
       if (data.error) {
@@ -305,9 +305,12 @@ export default function Dashboard() {
     }
   };
 
+  const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
   const handleConfirmSpawn = async (payload: {
     repoFullName: string;
     localPath: string;
+    branchName?: string;
     agent: AgentType;
     prompt: string;
   }) => {
@@ -319,6 +322,55 @@ export default function Dashboard() {
     const data = await res.json();
     if (!res.ok || data.error) {
       throw new Error(data.error || 'Failed to spawn agent in terminal');
+    }
+  };
+
+  const handleTriggerGate = async (prWithGates: PRWithGates, gateResult: EvaluatedGateResult) => {
+    if (config?.directAgentSpawn) {
+      if (gateResult.rule.actionType === 'post_comment') {
+        try {
+          setActionBanner({ type: 'info', message: `Posting GitHub comment on PR #${prWithGates.pr.number}...` });
+          const res = await fetch('/api/prs/comment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              repoFullName: prWithGates.pr.repo_full_name,
+              prNumber: prWithGates.pr.number,
+              commentBody: gateResult.generatedPrompt,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            throw new Error(data.error || 'Failed to post comment');
+          }
+          setActionBanner({ type: 'success', message: `Comment posted on GitHub PR #${prWithGates.pr.number}!` });
+          setTimeout(() => setActionBanner(null), 5000);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Action failed';
+          setActionBanner({ type: 'error', message: msg });
+        }
+      } else {
+        try {
+          setActionBanner({ type: 'info', message: `Launching ${gateResult.targetAgent} agent in Antigravity IDE...` });
+          await handleConfirmSpawn({
+            repoFullName: prWithGates.pr.repo_full_name,
+            localPath: prWithGates.pr.local_path || '',
+            branchName: prWithGates.pr.head.ref,
+            agent: gateResult.targetAgent,
+            prompt: gateResult.generatedPrompt,
+          });
+          setActionBanner({
+            type: 'success',
+            message: `Launched ${gateResult.targetAgent} agent in Antigravity IDE terminal for branch "${prWithGates.pr.head.ref}"!`,
+          });
+          setTimeout(() => setActionBanner(null), 6000);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Action failed';
+          setActionBanner({ type: 'error', message: msg });
+        }
+      }
+    } else {
+      setActiveGateTrigger({ prWithGates, gateResult });
     }
   };
 
@@ -363,6 +415,32 @@ export default function Dashboard() {
 
       {/* Main Container - Fills Remaining Screen Height */}
       <main className="flex-1 flex flex-col w-full px-6 overflow-hidden pb-5">
+
+        {/* Global Action Feedback Banner */}
+        {actionBanner && (
+          <div
+            className={`p-3.5 mb-4 rounded-xl border text-xs flex items-center justify-between gap-3 shrink-0 shadow-sm ${
+              actionBanner.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : actionBanner.type === 'error'
+                ? 'bg-rose-50 border-rose-200 text-rose-900'
+                : 'bg-blue-50 border-blue-200 text-blue-900'
+            }`}
+          >
+            <div className="flex items-center gap-2.5 font-medium">
+              {actionBanner.type === 'info' && <RefreshCw className="w-4 h-4 text-blue-500 animate-spin shrink-0" />}
+              {actionBanner.type === 'success' && <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />}
+              {actionBanner.type === 'error' && <ShieldAlert className="w-4 h-4 text-rose-500 shrink-0" />}
+              <span>{actionBanner.message}</span>
+            </div>
+            <button
+              onClick={() => setActionBanner(null)}
+              className="text-[11px] text-gray-400 hover:text-gray-700 font-semibold"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Error Alert */}
         {error && (
@@ -461,9 +539,7 @@ export default function Dashboard() {
                           prWithGates={item}
                           isSelected={effectiveActiveCol1PRId === cardId}
                           columnTheme="blue"
-                          onTriggerGate={(prWithGates, gateResult) =>
-                            setActiveGateTrigger({ prWithGates, gateResult })
-                          }
+                          onTriggerGate={handleTriggerGate}
                         />
                       );
                     })
@@ -515,9 +591,7 @@ export default function Dashboard() {
                           prWithGates={item}
                           isSelected={effectiveActiveCol2PRId === cardId}
                           columnTheme="purple"
-                          onTriggerGate={(prWithGates, gateResult) =>
-                            setActiveGateTrigger({ prWithGates, gateResult })
-                          }
+                          onTriggerGate={handleTriggerGate}
                         />
                       );
                     })
