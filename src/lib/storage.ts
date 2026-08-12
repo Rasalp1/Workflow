@@ -35,7 +35,7 @@ Task:
   {
     id: 'code-review',
     name: 'Perform Code Review',
-    description: 'PR owned by someone else with latest comment from a non-user.',
+    description: 'PR owned by someone else with no comments yet.',
     enabled: true,
     buttonLabel: 'Code Review',
     buttonIcon: 'Eye',
@@ -43,17 +43,43 @@ Task:
     actionType: 'spawn_agent',
     conditions: {
       prOwnedByNonCurrentUser: true,
-      lastCommentNotCurrentUser: true,
+      hasNoComments: true,
     },
     promptTemplate: `Perform a thorough code review for PR #{pr_number} ({pr_title}) in repository {repo_name}.
 Review the latest changes on branch '{branch}' compared to base '{base_branch}'.
-Latest comment from @{last_comment_author}:
-"{last_comment_body}"
 
 Instructions:
 1. Examine git status, modified files, and diffs on branch {branch}.
 2. Check for logic issues, edge cases, performance, or styling defects.
 3. Fix any identified bugs or address review comments directly on disk.`,
+  },
+  {
+    id: 'review-with-context',
+    name: 'Review With Context',
+    description: 'PR owned by someone else with prior context from us and new comments.',
+    enabled: true,
+    buttonLabel: 'Review with context',
+    buttonIcon: 'Eye',
+    buttonColor: 'emerald',
+    actionType: 'spawn_agent',
+    conditions: {
+      prOwnedByNonCurrentUser: true,
+      hasCommentsByCurrentUser: true,
+      lastCommentNotCurrentUser: true,
+    },
+    promptTemplate: `Perform a code review for PR #{pr_number} ({pr_title}) in repository {repo_name} taking into account our prior context and discussion.
+Review the latest changes on branch '{branch}' compared to base '{base_branch}'.
+
+Discussion summary and prior context:
+{comments_summary}
+
+Latest comment from @{last_comment_author}:
+"{last_comment_body}"
+
+Instructions:
+1. Review the new comments and changes in context of our previous feedback.
+2. Inspect the codebase for changes on branch {branch}.
+3. Address open questions or fix identified issues directly on disk.`,
   },
   {
     id: 'rebase-user-pr',

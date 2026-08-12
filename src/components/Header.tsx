@@ -14,7 +14,7 @@ interface HeaderProps {
   currentUser: string | null;
   prCount: number;
   awaitingCommentCount: number;
-  awaitingCommentItems: { repoName: string; prs: { number: number; title: string; cardId: string }[] }[];
+  awaitingCommentItems: { repoName: string; prs: { number: number; title: string; cardId: string; branchName?: string }[] }[];
   theirsToHandleCount: number;
   onSelectPR: (cardId: string) => void;
 }
@@ -65,7 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
           {/* Theirs to Handle Stat */}
           <div className="flex items-center gap-2 bg-white border border-gray-200 px-3 py-1.5 rounded-lg shadow-sm">
-            <div className="flex items-baseline gap-1.5">
+            <div className="flex items-center gap-1.5">
               <span className="text-lg font-bold text-gray-400 tracking-tight leading-none">
                 {theirsToHandleCount}
               </span>
@@ -86,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="p-1 rounded-md bg-amber-50 border border-amber-200">
                 <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
               </div>
-              <div className="flex items-baseline gap-1.5">
+              <div className="flex items-center gap-1.5">
                 <span className="text-lg font-bold text-amber-500 tracking-tight leading-none">
                   {awaitingCommentCount}
                 </span>
@@ -130,8 +130,8 @@ export const Header: React.FC<HeaderProps> = ({
                                 className="w-full text-left px-2.5 py-1 rounded-lg bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 text-gray-700 text-xs font-mono font-semibold transition-all flex items-center justify-between group/pr"
                               >
                                 <span className="text-blue-600">#{pr.number}</span>
-                                <span className="text-[10px] text-gray-400 group-hover/pr:text-gray-700 font-sans font-normal truncate max-w-[200px]" title={pr.title}>
-                                  {pr.title}
+                                <span className="text-[10px] text-gray-400 group-hover/pr:text-gray-700 font-mono font-normal truncate max-w-[200px]" title={pr.branchName || pr.title}>
+                                  {pr.branchName || pr.title}
                                 </span>
                               </button>
                             ))}
