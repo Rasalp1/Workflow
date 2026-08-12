@@ -16,18 +16,28 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
-          a: ({ node, href, children, ...props }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline text-blue-600 hover:text-blue-800 underline underline-offset-2 break-all font-medium"
-              {...props}
-            >
-              {children}
-            </a>
-          ),
-          code: ({ node, className, children, ...props }: any) => {
+          a: ({ href, children, ...props }) => {
+            const isSafeScheme =
+              !href ||
+              href.startsWith('http://') ||
+              href.startsWith('https://') ||
+              href.startsWith('mailto:') ||
+              href.startsWith('#');
+            const safeHref = isSafeScheme ? href : '#';
+
+            return (
+              <a
+                href={safeHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline text-blue-600 hover:text-blue-800 underline underline-offset-2 break-all font-medium"
+                {...props}
+              >
+                {children}
+              </a>
+            );
+          },
+          code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'>) => {
             const contentStr = String(children || '').replace(/\n$/, '');
             const isMultiLine = contentStr.includes('\n');
             const isLanguageBlock = Boolean(className && className.includes('language-'));

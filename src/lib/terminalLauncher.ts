@@ -5,6 +5,7 @@ import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { AgentType } from '@/types';
+import { sanitizeBranchName, validateLocalPath } from '@/lib/security';
 
 const execAsync = promisify(exec);
 
@@ -24,6 +25,8 @@ export async function spawnAgentInTerminal({
   agent,
   prompt,
 }: SpawnAgentOptions): Promise<{ success: boolean; message: string }> {
+  validateLocalPath(repoPath);
+
   // Sanitize prompt for shell execution safely
   const escapedPrompt = prompt.replace(/"/g, '\\"').replace(/`/g, '\\`').replace(/\$/g, '\\$');
   const cliCommand = `${agent} "${escapedPrompt}"`;
@@ -46,16 +49,13 @@ export async function spawnAgentInTerminal({
   `;
 
   try {
-    // 1. Ensure target path exists
-    if (repoPath) {
-      // Execute AppleScript to focus Antigravity on target directory
-      const commandScript = `
-        osascript -e '${appleScript}'
-      `;
-      await execAsync(commandScript);
-    }
+    // 1. Focus Antigravity on target directory
+    const commandScript = `
+      osascript -e '${appleScript}'
+    `;
+    await execAsync(commandScript);
 
-    // 2. Also run AppleScript keystroke to open terminal and send CLI command if Antigravity is open
+    // 2. Run AppleScript keystroke to open terminal and send CLI command if Antigravity is open
     const terminalScript = `
       osascript -e '
         tell application "System Events"
@@ -78,8 +78,8 @@ export async function spawnAgentInTerminal({
         success: true,
         message: `Successfully spawned ${agent} agent in Antigravity IDE terminal for ${repoPath}`,
       };
-    } catch (err: any) {
-      // Fallback: If keystroke AppleScript fails (e.g. process name difference), launch via macOS Terminal app targeting Antigravity repo directory
+    } catch {
+      // Fallback: If keystroke AppleScript fails (e.g. process name difference), launch via macOS Terminal app targeting repo directory
       const fallbackScript = `
         osascript -e '
           tell application "Terminal"
@@ -94,11 +94,12 @@ export async function spawnAgentInTerminal({
         message: `Spawned ${agent} agent in terminal window for ${repoPath}`,
       };
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to spawn agent in terminal:', error);
+    const msg = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      message: `Failed to launch agent in terminal: ${error.message}`,
+      message: `Failed to launch agent in terminal: ${msg}`,
     };
   }
 }
@@ -108,7 +109,10 @@ export async function spawnWorktreeInAntigravity({
   branchName,
 }: SpawnWorktreeOptions): Promise<{ success: boolean; message: string; worktreePath: string }> {
   try {
-    const branchSlug = branchName.replace(/[^a-zA-Z0-9._-]/g, '-');
+    validateLocalPath(repoPath);
+    const cleanBranch = sanitizeBranchName(branchName);
+
+    const branchSlug = cleanBranch.replace(/[^a-zA-Z0-9._-]/g, '-');
     const cleanRepoPath = repoPath.replace(/\/$/, '');
     const parentDir = cleanRepoPath.substring(0, cleanRepoPath.lastIndexOf('/'));
     const worktreesDir = `${parentDir}/worktrees`;
@@ -125,22 +129,21 @@ export async function spawnWorktreeInAntigravity({
 
     if (!alreadyExists) {
       // Fetch latest commits from remote for branch
-      await execAsync(`git -C "${cleanRepoPath}" fetch origin "${branchName}"`).catch(() => {});
+      await execAsync(`git -C "${cleanRepoPath}" fetch origin "${cleanBranch}"`).catch(() => {});
       
       // Try worktree add: 1. branch directly, 2. new local branch from origin/branch, 3. fallback create
-      const addCmd = `git -C "${cleanRepoPath}" worktree add "${worktreePath}" "${branchName}" 2>/dev/null || git -C "${cleanRepoPath}" worktree add "${worktreePath}" -b "${branchSlug}" "origin/${branchName}" 2>/dev/null || git -C "${cleanRepoPath}" worktree add "${worktreePath}" HEAD`;
+      const addCmd = `git -C "${cleanRepoPath}" worktree add "${worktreePath}" "${cleanBranch}" 2>/dev/null || git -C "${cleanRepoPath}" worktree add "${worktreePath}" -b "${branchSlug}" "origin/${cleanBranch}" 2>/dev/null || git -C "${cleanRepoPath}" worktree add "${worktreePath}" HEAD`;
       try {
         await execAsync(addCmd);
-      } catch (addError: any) {
-        // If git worktree add failed (e.g. branch or folder already exists elsewhere), but worktree directory exists on disk now, do not abort
+      } catch (addError: unknown) {
+        // If git worktree add failed but worktree directory exists on disk now, do not abort
         if (!existsSync(worktreePath)) {
           throw addError;
         }
       }
     }
 
-    // Open a new terminal tab in the correct Antigravity IDE window (the one showing this repo).
-    // If no window with this repo is open, launch it first.
+    // Open a new terminal tab in the correct Antigravity IDE window
     const repoName = cleanRepoPath.split('/').pop() ?? '';
     const ideCli = '/Applications/Antigravity IDE.app/Contents/Resources/app/bin/antigravity-ide';
 
@@ -211,16 +214,15 @@ end tell
     await writeFile(tmpScript, appleScript, 'utf8');
     try {
       await execAsync(`osascript "${tmpScript}"`);
-    } catch (scriptErr: any) {
-      // Error 1002 = Accessibility permission not granted
-      if (scriptErr.message?.includes('1002') || scriptErr.message?.includes('not allowed to send keystrokes')) {
-        // Open System Settings to the Accessibility pane so the user can grant permission
+    } catch (scriptErr: unknown) {
+      const msg = scriptErr instanceof Error ? scriptErr.message : String(scriptErr);
+      if (msg.includes('1002') || msg.includes('not allowed to send keystrokes')) {
         await execAsync(
           `open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`
         ).catch(() => {});
         return {
           success: false,
-          message: `Permission required: Please grant Accessibility access to your terminal in the System Settings window that just opened, then try again.`,
+          message: `Permission required: Please grant Accessibility access to your terminal in System Settings, then try again.`,
           worktreePath,
         };
       }
@@ -233,16 +235,18 @@ end tell
     return {
       success: true,
       message: wasExisting
-        ? `Worktree for branch "${branchName}" already exists at "${worktreePath}" — opened terminal and navigated in Antigravity IDE`
-        : `Worktree for branch "${branchName}" spawned at "${worktreePath}" and opened in Antigravity IDE`,
+        ? `Worktree for branch "${cleanBranch}" already exists at "${worktreePath}" — opened terminal and navigated in Antigravity IDE`
+        : `Worktree for branch "${cleanBranch}" spawned at "${worktreePath}" and opened in Antigravity IDE`,
       worktreePath,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to spawn worktree in Antigravity:', error);
+    const msg = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      message: `Failed to spawn worktree: ${error.message}`,
+      message: `Failed to spawn worktree: ${msg}`,
       worktreePath: '',
     };
   }
 }
+

@@ -6,8 +6,8 @@ import { PRWithGates } from '@/types';
 
 export async function GET() {
   try {
-    const config = loadConfig();
-    const rules = loadRules();
+    const config = await loadConfig();
+    const rules = await loadRules();
 
     if (!config.githubToken) {
       return NextResponse.json(
@@ -43,7 +43,7 @@ export async function GET() {
             evaluatedGates,
           });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(`Error fetching PRs for ${repoFullName}:`, err);
       }
     }
@@ -54,10 +54,11 @@ export async function GET() {
       prsWithGates: allPRsWithGates,
       monitoredRepos: config.monitoredRepos,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('API /api/prs Error:', error);
+    const msg = error instanceof Error ? error.message : 'Failed to fetch PRs';
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch PRs' },
+      { error: msg },
       { status: 500 }
     );
   }

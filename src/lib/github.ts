@@ -38,51 +38,58 @@ export async function getRepoPullRequests(
 
   // Filter out PRs created by github-actions[bot]
   const validPrsData = (prsData || []).filter(
-    (rawPr: any) =>
-      rawPr.user?.login !== 'github-actions[bot]' &&
-      !rawPr.user?.login?.toLowerCase().includes('github-actions')
+    (rawPr: Record<string, unknown>) => {
+      const user = rawPr.user as { login?: string } | undefined;
+      return (
+        user?.login !== 'github-actions[bot]' &&
+        !user?.login?.toLowerCase().includes('github-actions')
+      );
+    }
   );
 
   const pullRequests: PullRequest[] = await Promise.all(
-    validPrsData.map(async (rawPr: any) => {
-      const prNumber = rawPr.number;
+    validPrsData.map(async (rawPr: Record<string, unknown>) => {
+      const prNumber = rawPr.number as number;
+      const head = rawPr.head as { ref: string; sha: string };
+      const base = rawPr.base as { ref: string };
+      const user = rawPr.user as { login: string; avatar_url: string; html_url: string };
 
       // Fetch single PR details, issue comments & review comments in parallel (up to 100 per page)
       const [singlePrDetails, issueComments, reviewComments, combinedStatus] = await Promise.all([
         fetchGitHubAPI(`/repos/${owner}/${repo}/pulls/${prNumber}`, token).catch(() => null),
         fetchGitHubAPI(`/repos/${owner}/${repo}/issues/${prNumber}/comments?per_page=100`, token).catch(() => []),
         fetchGitHubAPI(`/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100`, token).catch(() => []),
-        fetchGitHubAPI(`/repos/${owner}/${repo}/commits/${rawPr.head.sha}/status`, token).catch(() => null),
+        fetchGitHubAPI(`/repos/${owner}/${repo}/commits/${head.sha}/status`, token).catch(() => null),
       ]);
 
-      const formattedIssueComments: PRComment[] = (issueComments || []).map((c: any) => ({
-        id: c.id,
+      const formattedIssueComments: PRComment[] = (issueComments || []).map((c: Record<string, unknown>) => ({
+        id: c.id as number,
         user: {
-          login: c.user.login,
-          avatar_url: c.user.avatar_url,
-          html_url: c.user.html_url,
+          login: (c.user as { login: string }).login,
+          avatar_url: (c.user as { avatar_url: string }).avatar_url,
+          html_url: (c.user as { html_url: string }).html_url,
         },
-        body: c.body || '',
-        created_at: c.created_at,
-        updated_at: c.updated_at,
-        html_url: c.html_url,
+        body: (c.body as string) || '',
+        created_at: c.created_at as string,
+        updated_at: c.updated_at as string,
+        html_url: c.html_url as string,
         is_review_comment: false,
       }));
 
-      const formattedReviewComments: PRComment[] = (reviewComments || []).map((c: any) => ({
-        id: c.id,
+      const formattedReviewComments: PRComment[] = (reviewComments || []).map((c: Record<string, unknown>) => ({
+        id: c.id as number,
         user: {
-          login: c.user.login,
-          avatar_url: c.user.avatar_url,
-          html_url: c.user.html_url,
+          login: (c.user as { login: string }).login,
+          avatar_url: (c.user as { avatar_url: string }).avatar_url,
+          html_url: (c.user as { html_url: string }).html_url,
         },
-        body: c.body || '',
-        created_at: c.created_at,
-        updated_at: c.updated_at,
-        html_url: c.html_url,
-        path: c.path,
-        position: c.position,
-        line: c.line,
+        body: (c.body as string) || '',
+        created_at: c.created_at as string,
+        updated_at: c.updated_at as string,
+        html_url: c.html_url as string,
+        path: c.path as string | undefined,
+        position: c.position as number | undefined,
+        line: c.line as number | undefined,
         is_review_comment: true,
       }));
 
@@ -104,32 +111,32 @@ export async function getRepoPullRequests(
         singlePrDetails?.mergeable_state === 'dirty';
 
       const prObj: PullRequest = {
-        id: rawPr.id,
-        number: rawPr.number,
-        title: rawPr.title,
-        body: rawPr.body || '',
-        state: rawPr.state,
+        id: rawPr.id as number,
+        number: rawPr.number as number,
+        title: rawPr.title as string,
+        body: (rawPr.body as string) || '',
+        state: rawPr.state as 'open' | 'closed' | 'merged',
         is_draft: !!rawPr.draft,
-        html_url: rawPr.html_url,
-        created_at: rawPr.created_at,
-        updated_at: rawPr.updated_at,
+        html_url: rawPr.html_url as string,
+        created_at: rawPr.created_at as string,
+        updated_at: rawPr.updated_at as string,
         head: {
-          ref: rawPr.head.ref,
-          sha: rawPr.head.sha,
+          ref: head.ref,
+          sha: head.sha,
         },
         base: {
-          ref: rawPr.base.ref,
+          ref: base.ref,
         },
         user: {
-          login: rawPr.user.login,
-          avatar_url: rawPr.user.avatar_url,
-          html_url: rawPr.user.html_url,
+          login: user.login,
+          avatar_url: user.avatar_url,
+          html_url: user.html_url,
         },
         repo_owner: owner,
         repo_name: repo,
         repo_full_name: repoFullName,
-        comments_count: rawPr.comments + rawPr.review_comments,
-        review_comments_count: rawPr.review_comments,
+        comments_count: (rawPr.comments as number) + (rawPr.review_comments as number),
+        review_comments_count: rawPr.review_comments as number,
         comments: allComments,
         last_comment: lastComment,
         checks_status: checksStatus,
@@ -148,7 +155,7 @@ export async function fetchAuthenticatedUser(token?: string): Promise<string | n
   try {
     const user = await fetchGitHubAPI('/user', token);
     return user.login || null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }

@@ -2,9 +2,11 @@ import { NextResponse } from 'next/server';
 import { spawnAgentInTerminal } from '@/lib/terminalLauncher';
 import { loadConfig } from '@/lib/storage';
 import { AgentType } from '@/types';
+import { validateOrigin } from '@/lib/security';
 
 export async function POST(request: Request) {
   try {
+    validateOrigin(request);
     const body = await request.json();
     const { repoFullName, localPath, agent, prompt } = body;
 
@@ -12,7 +14,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
     }
 
-    const config = loadConfig();
+    const config = await loadConfig();
     const targetPath =
       localPath ||
       config.repoPaths[repoFullName] ||
@@ -45,8 +47,9 @@ export async function POST(request: Request) {
       targetPath,
       agent: targetAgent,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('API /api/agent/spawn Error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to spawn agent' }, { status: 500 });
+    const msg = error instanceof Error ? error.message : 'Failed to spawn agent';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

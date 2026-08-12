@@ -17,18 +17,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   config,
   onSaveConfig,
 }) => {
+  const [prevConfig, setPrevConfig] = useState<AppConfig | null>(null);
   const [githubToken, setGithubToken] = useState('');
   const [monitoredReposStr, setMonitoredReposStr] = useState('');
   const [repoPaths, setRepoPaths] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
 
-  React.useEffect(() => {
-    if (config) {
-      setGithubToken(config.githubToken || '');
-      setMonitoredReposStr((config.monitoredRepos || []).join(', '));
-      setRepoPaths(config.repoPaths || {});
-    }
-  }, [config]);
+  if (config && config !== prevConfig) {
+    setPrevConfig(config);
+    setGithubToken(config.maskedToken || config.githubToken || '');
+    setMonitoredReposStr((config.monitoredRepos || []).join(', '));
+    setRepoPaths(config.repoPaths || {});
+  }
 
   if (!isOpen || !config) return null;
 
