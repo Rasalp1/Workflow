@@ -23,11 +23,20 @@ interface PRCardProps {
   prWithGates: PRWithGates;
   onTriggerGate: (prWithGates: PRWithGates, gateResult: EvaluatedGateResult) => void;
   isSelected?: boolean;
+  columnTheme?: 'blue' | 'purple';
+  customId?: string;
 }
 
-export const PRCard: React.FC<PRCardProps> = ({ prWithGates, onTriggerGate, isSelected }) => {
+export const PRCard: React.FC<PRCardProps> = ({
+  prWithGates,
+  onTriggerGate,
+  isSelected,
+  columnTheme = 'blue',
+  customId,
+}) => {
   const { pr, evaluatedGates } = prWithGates;
   const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
+  const elementId = customId || cardId;
   const passedGates = evaluatedGates.filter((g) => g.passed);
 
   const [isSpawningWorktree, setIsSpawningWorktree] = useState(false);
@@ -109,13 +118,25 @@ export const PRCard: React.FC<PRCardProps> = ({ prWithGates, onTriggerGate, isSe
 
   return (
     <div
-      id={cardId}
+      id={elementId}
+      data-pr-id={cardId}
       className={`card rounded-xl p-5 mb-6 transition-all scroll-mt-20 ${
         isSelected
-          ? 'border-blue-300 shadow-blue-100'
+          ? columnTheme === 'purple'
+            ? 'border-purple-400 shadow-purple-100 ring-2 ring-purple-400/20'
+            : 'border-blue-400 shadow-blue-100 ring-2 ring-blue-400/20'
           : 'border-gray-200'
       }`}
-      style={isSelected ? { boxShadow: '0 0 0 3px rgba(59,130,246,0.1), 0 4px 12px -2px rgba(0,0,0,0.08)' } : {}}
+      style={
+        isSelected
+          ? {
+              boxShadow:
+                columnTheme === 'purple'
+                  ? '0 0 0 3px rgba(168,85,247,0.15), 0 4px 12px -2px rgba(0,0,0,0.08)'
+                  : '0 0 0 3px rgba(59,130,246,0.15), 0 4px 12px -2px rgba(0,0,0,0.08)',
+            }
+          : {}
+      }
     >
       {/* Header Info */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 pb-4 border-b border-gray-100">
@@ -336,7 +357,7 @@ export const PRCard: React.FC<PRCardProps> = ({ prWithGates, onTriggerGate, isSe
       </div>
 
       {/* Action Bar: Logic Gates & Spawner Buttons */}
-      <div id={`${cardId}-action-bar`} className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
+      <div id={`${elementId}-action-bar`} className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-mono font-semibold border border-blue-200">
             #{pr.number}

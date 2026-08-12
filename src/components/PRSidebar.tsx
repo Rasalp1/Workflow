@@ -6,11 +6,19 @@ import { CheckCircle2, AlertCircle, Clock, Layers, AlertTriangle } from 'lucide-
 
 interface PRSidebarProps {
   prsWithGates: PRWithGates[];
-  activePRId: string | null;
+  activeCol1PRId?: string | null;
+  activeCol2PRId?: string | null;
+  activePRId?: string | null;
   onSelectPR: (prId: string) => void;
 }
 
-export const PRSidebar: React.FC<PRSidebarProps> = ({ prsWithGates, activePRId, onSelectPR }) => {
+export const PRSidebar: React.FC<PRSidebarProps> = ({
+  prsWithGates,
+  activeCol1PRId,
+  activeCol2PRId,
+  activePRId,
+  onSelectPR,
+}) => {
   return (
     <aside className="w-full lg:w-72 shrink-0 panel rounded-xl p-3 h-full overflow-y-auto space-y-2">
       <div className="flex items-center justify-between pb-2.5 border-b border-gray-100 mb-1">
@@ -28,44 +36,76 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({ prsWithGates, activePRId, 
         <div className="space-y-1">
           {prsWithGates.map(({ pr, evaluatedGates }) => {
             const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
-            const isActive = activePRId === cardId;
+            const isCol1Active = activeCol1PRId === cardId || (activePRId === cardId && !activeCol2PRId);
+            const isCol2Active = activeCol2PRId === cardId;
+            const isBothActive = isCol1Active && isCol2Active;
             const passedGates = evaluatedGates.filter((g) => g.passed);
+
+            let containerClasses = 'bg-white hover:bg-gray-50 border-gray-100 hover:border-gray-200';
+            let numberClasses = 'text-gray-500 bg-gray-100 border-gray-200';
+            let titleClasses = 'text-gray-800 group-hover:text-gray-900';
+
+            if (isBothActive) {
+              containerClasses =
+                'bg-gradient-to-r from-blue-50/90 to-purple-50/90 border-indigo-300 shadow-sm ring-1 ring-indigo-200/60';
+              numberClasses = 'text-indigo-800 bg-indigo-100 border-indigo-200 font-bold';
+              titleClasses = 'text-indigo-950 font-semibold';
+            } else if (isCol1Active) {
+              containerClasses =
+                'bg-blue-50/90 border-blue-300 shadow-sm ring-1 ring-blue-200/60';
+              numberClasses = 'text-blue-800 bg-blue-100 border-blue-200 font-bold';
+              titleClasses = 'text-blue-950 font-semibold';
+            } else if (isCol2Active) {
+              containerClasses =
+                'bg-purple-50/90 border-purple-300 shadow-sm ring-1 ring-purple-200/60';
+              numberClasses = 'text-purple-800 bg-purple-100 border-purple-200 font-bold';
+              titleClasses = 'text-purple-950 font-semibold';
+            }
 
             return (
               <button
                 key={cardId}
                 onClick={() => onSelectPR(cardId)}
-                className={`w-full text-left px-3 py-2.5 rounded-lg transition-all border flex flex-col gap-1.5 group ${
-                  isActive
-                    ? 'bg-blue-50 border-blue-200 shadow-sm'
-                    : 'bg-white hover:bg-gray-50 border-gray-100 hover:border-gray-200'
-                }`}
+                className={`w-full text-left px-3 py-2.5 rounded-lg transition-all border flex flex-col gap-1.5 group ${containerClasses}`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-medium text-gray-500 group-hover:text-gray-700 truncate max-w-[150px]" title={pr.repo_full_name}>
+                  <span
+                    className="text-[11px] font-medium text-gray-500 group-hover:text-gray-700 truncate max-w-[130px]"
+                    title={pr.repo_full_name}
+                  >
                     {pr.repo_name}
                   </span>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 shrink-0">
+                    {/* Active Column Badges */}
+                    {isCol1Active && (
+                      <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-600 text-white shadow-2xs tracking-wider uppercase">
+                        Col 1
+                      </span>
+                    )}
+                    {isCol2Active && (
+                      <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-purple-600 text-white shadow-2xs tracking-wider uppercase">
+                        Col 2
+                      </span>
+                    )}
                     {pr.has_merge_conflicts && (
-                      <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 shrink-0" title="Merge Conflicts">
+                      <span
+                        className="text-[10px] font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 shrink-0"
+                        title="Merge Conflicts"
+                      >
                         Conflict
                       </span>
                     )}
-                    <span className={`text-xs font-mono font-semibold px-1.5 py-0.5 rounded border shrink-0 ${
-                      isActive ? 'text-blue-700 bg-blue-100 border-blue-200' : 'text-gray-500 bg-gray-100 border-gray-200'
-                    }`}>
+                    <span className={`text-xs font-mono px-1.5 py-0.5 rounded border shrink-0 ${numberClasses}`}>
                       #{pr.number}
                     </span>
                   </div>
                 </div>
 
-                <div className={`text-xs font-medium line-clamp-2 leading-snug ${
-                  isActive ? 'text-blue-900' : 'text-gray-800 group-hover:text-gray-900'
-                }`}>
+                <div className={`text-xs line-clamp-2 leading-snug ${titleClasses}`}>
                   {pr.title}
                 </div>
 
-                <div className="flex items-center justify-between pt-1 text-[11px] border-t border-gray-100">
+                <div className="flex items-center justify-between pt-1 text-[11px] border-t border-gray-100/80">
                   <div className="flex items-center gap-1.5">
                     {pr.has_merge_conflicts ? (
                       <span className="flex items-center gap-1 text-rose-500 font-semibold">
