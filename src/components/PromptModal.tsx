@@ -15,6 +15,7 @@ interface PromptModalProps {
     branchName?: string;
     agent: AgentType;
     prompt: string;
+    cardId?: string;
   }) => Promise<void>;
 }
 
@@ -76,6 +77,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({
           branchName: pr.head.ref,
           agent: selectedAgent,
           prompt: promptText,
+          cardId: `pr-card-${pr.repo_full_name}-${pr.number}`,
         });
 
         setStatusMessage({

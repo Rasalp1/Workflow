@@ -1,5 +1,10 @@
 export type AgentType = 'codex' | 'claude';
 
+export interface ActiveAgentInfo {
+  agent: AgentType;
+  timestamp: number;
+}
+
 export interface PRUser {
   login: string;
   avatar_url: string;

@@ -234,3 +234,45 @@ export async function postPRComment(
   const data = await res.json();
   return { success: true, commentUrl: data.html_url };
 }
+
+export async function mergePullRequest(
+  repoFullName: string,
+  prNumber: number,
+  commitTitle?: string,
+  token?: string
+): Promise<{ success: boolean; message: string; sha?: string }> {
+  const [owner, repo] = repoFullName.split('/');
+  if (!owner || !repo) {
+    throw new Error(`Invalid repo format "${repoFullName}". Expected "owner/repo"`);
+  }
+  const authToken = token || process.env.GITHUB_TOKEN;
+  if (!authToken) {
+    throw new Error('GitHub token is required to merge pull requests.');
+  }
+
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/merge`, {
+    method: 'PUT',
+    headers: {
+      'Accept': 'application/vnd.github.v3+json',
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      commit_title: commitTitle || `Merge pull request #${prNumber} from ${repoFullName}`,
+    }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    const errorMsg = errorData.message || res.statusText;
+    throw new Error(`Failed to merge PR #${prNumber}: ${errorMsg}`);
+  }
+
+  const data = await res.json();
+  return {
+    success: true,
+    message: data.message || `PR #${prNumber} successfully merged`,
+    sha: data.sha,
+  };
+}
+

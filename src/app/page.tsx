@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
-import { AgentType, AppConfig, EvaluatedGateResult, LogicalGateRule, PRWithGates } from '@/types';
+import { ActiveAgentInfo, AgentType, AppConfig, EvaluatedGateResult, LogicalGateRule, PRWithGates } from '@/types';
 import { Header } from '@/components/Header';
 import { PRCard } from '@/components/PRCard';
 import { PRSidebar } from '@/components/PRSidebar';
@@ -16,6 +16,9 @@ export default function Dashboard() {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Active In-Process Agents State
+  const [activeAgentPRs, setActiveAgentPRs] = useState<Record<string, ActiveAgentInfo>>({});
 
   // Dual Active Column PR States & Refs
   const [activeCol1PRId, setActiveCol1PRId] = useState<string | null>(null);
@@ -39,6 +42,32 @@ export default function Dashboard() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [rules, setRules] = useState<LogicalGateRule[]>([]);
+
+  // Load persisted active agents state on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('workflow_active_agent_prs');
+      if (saved) {
+        setActiveAgentPRs(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error('Failed to load active agent state from localStorage:', e);
+    }
+  }, []);
+
+  const handleClearActiveAgent = (cardId: string) => {
+    const cardKey = cardId.replace(/^(col1-|col2-)/, '');
+    setActiveAgentPRs((prev) => {
+      const updated = { ...prev };
+      delete updated[cardKey];
+      try {
+        localStorage.setItem('workflow_active_agent_prs', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to update localStorage:', e);
+      }
+      return updated;
+    });
+  };
 
   // Fetch PRs and Gates
   const fetchPRs = React.useCallback(async () => {
@@ -313,6 +342,7 @@ export default function Dashboard() {
     branchName?: string;
     agent: AgentType;
     prompt: string;
+    cardId?: string;
   }) => {
     const res = await fetch('/api/agent/spawn', {
       method: 'POST',
@@ -322,6 +352,35 @@ export default function Dashboard() {
     const data = await res.json();
     if (!res.ok || data.error) {
       throw new Error(data.error || 'Failed to spawn agent in terminal');
+    }
+
+    let targetCardId = payload.cardId;
+    if (!targetCardId && payload.repoFullName && payload.branchName) {
+      const found = prsWithGates.find(
+        (item) => item.pr.repo_full_name === payload.repoFullName && item.pr.head.ref === payload.branchName
+      );
+      if (found) {
+        targetCardId = `pr-card-${found.pr.repo_full_name}-${found.pr.number}`;
+      }
+    }
+
+    if (targetCardId) {
+      const cardKey = targetCardId.replace(/^(col1-|col2-)/, '');
+      setActiveAgentPRs((prev) => {
+        const updated = {
+          ...prev,
+          [cardKey]: {
+            agent: payload.agent,
+            timestamp: Date.now(),
+          },
+        };
+        try {
+          localStorage.setItem('workflow_active_agent_prs', JSON.stringify(updated));
+        } catch (e) {
+          console.error(e);
+        }
+        return updated;
+      });
     }
   };
 
@@ -358,6 +417,7 @@ export default function Dashboard() {
             branchName: prWithGates.pr.head.ref,
             agent: gateResult.targetAgent,
             prompt: gateResult.generatedPrompt,
+            cardId: `pr-card-${prWithGates.pr.repo_full_name}-${prWithGates.pr.number}`,
           });
           setActionBanner({
             type: 'success',
@@ -371,6 +431,34 @@ export default function Dashboard() {
       }
     } else {
       setActiveGateTrigger({ prWithGates, gateResult });
+    }
+  };
+
+  const handleMergePR = async (prWithGates: PRWithGates) => {
+    try {
+      setActionBanner({ type: 'info', message: `Merging PR #${prWithGates.pr.number} into ${prWithGates.pr.base.ref}...` });
+      const res = await fetch('/api/prs/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoFullName: prWithGates.pr.repo_full_name,
+          prNumber: prWithGates.pr.number,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to merge PR');
+      }
+      setActionBanner({
+        type: 'success',
+        message: `Successfully merged PR #${prWithGates.pr.number} into ${prWithGates.pr.base.ref}!`,
+      });
+      setTimeout(() => setActionBanner(null), 5000);
+      fetchPRs();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to merge PR';
+      setActionBanner({ type: 'error', message: msg });
+      throw err;
     }
   };
 
@@ -410,6 +498,8 @@ export default function Dashboard() {
         awaitingCommentCount={prsWithoutOurLatestComment.length}
         theirsToHandleCount={searchFilteredPRs.length - prsWithoutOurLatestComment.length}
         awaitingCommentItems={awaitingCommentItems}
+        activeAgentPRs={activeAgentPRs}
+        onClearActiveAgent={handleClearActiveAgent}
         onSelectPR={handleSelectPR}
       />
 
@@ -490,6 +580,7 @@ export default function Dashboard() {
               prsWithGates={sortedPRs}
               activeCol1PRId={effectiveActiveCol1PRId}
               activeCol2PRId={effectiveActiveCol2PRId}
+              activeAgentPRs={activeAgentPRs}
               onSelectPR={handleSelectPR}
             />
 
@@ -532,6 +623,7 @@ export default function Dashboard() {
                   ) : (
                     col1PRs.map((item) => {
                       const cardId = `pr-card-${item.pr.repo_full_name}-${item.pr.number}`;
+                      const isInProcess = Boolean(activeAgentPRs[cardId]);
                       return (
                         <PRCard
                           key={`col1-${cardId}`}
@@ -539,7 +631,11 @@ export default function Dashboard() {
                           prWithGates={item}
                           isSelected={effectiveActiveCol1PRId === cardId}
                           columnTheme="blue"
+                          isInProcess={isInProcess}
+                          activeAgentInfo={activeAgentPRs[cardId]}
+                          onClearActiveAgent={handleClearActiveAgent}
                           onTriggerGate={handleTriggerGate}
+                          onMergePR={handleMergePR}
                         />
                       );
                     })
@@ -584,6 +680,7 @@ export default function Dashboard() {
                   ) : (
                     col2PRs.map((item) => {
                       const cardId = `pr-card-${item.pr.repo_full_name}-${item.pr.number}`;
+                      const isInProcess = Boolean(activeAgentPRs[cardId]);
                       return (
                         <PRCard
                           key={`col2-${cardId}`}
@@ -591,7 +688,11 @@ export default function Dashboard() {
                           prWithGates={item}
                           isSelected={effectiveActiveCol2PRId === cardId}
                           columnTheme="purple"
+                          isInProcess={isInProcess}
+                          activeAgentInfo={activeAgentPRs[cardId]}
+                          onClearActiveAgent={handleClearActiveAgent}
                           onTriggerGate={handleTriggerGate}
+                          onMergePR={handleMergePR}
                         />
                       );
                     })

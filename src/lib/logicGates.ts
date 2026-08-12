@@ -132,6 +132,7 @@ export function formatPromptTemplate(template: string, pr: PullRequest): string 
     .replace(/{repo_name}/g, pr.repo_full_name)
     .replace(/{branch}/g, pr.head.ref)
     .replace(/{base_branch}/g, pr.base.ref)
+    .replace(/{base branch}/g, pr.base.ref)
     .replace(/{author}/g, pr.user.login)
     .replace(/{pr_author}/g, `@${pr.user.login}`)
     .replace(/{last_comment_author}/g, lastCommentAuthor)
