@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { AgentType, AppConfig, EvaluatedGateResult, LogicalGateRule, PRWithGates } from '@/types';
 import { Header } from '@/components/Header';
 import { PRCard } from '@/components/PRCard';
@@ -16,7 +16,12 @@ export default function Dashboard() {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activePRId, setActivePRId] = useState<string | null>(null);
+
+  // Dual Active Column PR States & Refs
+  const [activeCol1PRId, setActiveCol1PRId] = useState<string | null>(null);
+  const [activeCol2PRId, setActiveCol2PRId] = useState<string | null>(null);
+  const col1ScrollRef = useRef<HTMLDivElement>(null);
+  const col2ScrollRef = useRef<HTMLDivElement>(null);
 
   // Column Repositories State
   const [col1Repo, setCol1Repo] = useState<string>('');
@@ -58,11 +63,6 @@ export default function Dashboard() {
           setCol1Repo((prev) => (prev && repos.includes(prev) ? prev : repos[0]));
           setCol2Repo((prev) => (prev && repos.includes(prev) ? prev : repos[1] || repos[0]));
         }
-
-        if (fetchedPRs.length > 0 && !activePRId) {
-          const firstId = `pr-card-${fetchedPRs[0].pr.repo_full_name}-${fetchedPRs[0].pr.number}`;
-          setActivePRId(firstId);
-        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load pull requests.';
@@ -70,7 +70,7 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [activePRId]);
+  }, []);
 
   // Fetch App Config & Rules
   const fetchConfigAndRules = React.useCallback(async () => {
@@ -108,51 +108,172 @@ export default function Dashboard() {
     };
   }, [fetchConfigAndRules, fetchPRs]);
 
-  // IntersectionObserver to sync sidebar active state on scroll
+  // Filtered PR list — excluding bot accounts
+  const searchFilteredPRs = prsWithGates.filter(({ pr }) => {
+    const isBot =
+      pr.user?.login === 'github-actions[bot]' ||
+      pr.user?.login?.toLowerCase().includes('github-actions');
+    return !isBot;
+  });
+
+  // Sort PRs:
+  // 1. Top: PRs where user (Rasalp1) does NOT have the latest comment/description
+  // 2. Bottom: PRs where user (Rasalp1) HAS the latest comment/description
+  // 3. Secondary sort: PR number descending
+  const sortedPRs = React.useMemo(() => {
+    return [...searchFilteredPRs].sort((a, b) => {
+      const targetUser = (currentUser || 'Rasalp1').toLowerCase();
+      const aLastUser = (a.pr.last_comment?.user?.login || a.pr.user.login).toLowerCase();
+      const bLastUser = (b.pr.last_comment?.user?.login || b.pr.user.login).toLowerCase();
+
+      const aIsUserLast = aLastUser === targetUser;
+      const bIsUserLast = bLastUser === targetUser;
+
+      if (aIsUserLast !== bIsUserLast) {
+        return aIsUserLast ? 1 : -1;
+      }
+
+      return b.pr.number - a.pr.number;
+    });
+  }, [searchFilteredPRs, currentUser]);
+
+  // Filter PRs for Column 1 & Column 2
+  const col1PRs = React.useMemo(() => {
+    return sortedPRs.filter(
+      ({ pr }) => col1Repo === 'ALL' || pr.repo_full_name === col1Repo
+    );
+  }, [sortedPRs, col1Repo]);
+
+  const col2PRs = React.useMemo(() => {
+    return sortedPRs.filter(
+      ({ pr }) => col2Repo === 'ALL' || pr.repo_full_name === col2Repo
+    );
+  }, [sortedPRs, col2Repo]);
+
+  // Auto-set default active PRs for Column 1 & Column 2 if none selected or no longer available
   useEffect(() => {
-    if (prsWithGates.length === 0) return;
+    if (col1PRs.length > 0) {
+      const exists = col1PRs.some(
+        ({ pr }) => `pr-card-${pr.repo_full_name}-${pr.number}` === activeCol1PRId
+      );
+      if (!activeCol1PRId || !exists) {
+        setActiveCol1PRId(`pr-card-${col1PRs[0].pr.repo_full_name}-${col1PRs[0].pr.number}`);
+      }
+    } else {
+      setActiveCol1PRId(null);
+    }
+  }, [col1PRs, activeCol1PRId]);
+
+  useEffect(() => {
+    if (col2PRs.length > 0) {
+      const exists = col2PRs.some(
+        ({ pr }) => `pr-card-${pr.repo_full_name}-${pr.number}` === activeCol2PRId
+      );
+      if (!activeCol2PRId || !exists) {
+        setActiveCol2PRId(`pr-card-${col2PRs[0].pr.repo_full_name}-${col2PRs[0].pr.number}`);
+      }
+    } else {
+      setActiveCol2PRId(null);
+    }
+  }, [col2PRs, activeCol2PRId]);
+
+  // IntersectionObserver to sync Column 1 active state on scroll
+  useEffect(() => {
+    const container = col1ScrollRef.current;
+    if (!container || col1PRs.length === 0) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            setActivePRId(entry.target.id);
+            const prId = entry.target.getAttribute('data-pr-id');
+            if (prId) setActiveCol1PRId(prId);
           }
         });
       },
-      { threshold: 0.3 }
+      { root: container, threshold: 0.3 }
     );
 
-    prsWithGates.forEach(({ pr }) => {
-      const el = document.getElementById(`pr-card-${pr.repo_full_name}-${pr.number}`);
+    col1PRs.forEach(({ pr }) => {
+      const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
+      const el = document.getElementById(`col1-${cardId}`);
       if (el) observer.observe(el);
     });
 
     return () => observer.disconnect();
-  }, [prsWithGates, col1Repo, col2Repo]);
+  }, [col1PRs]);
+
+  // IntersectionObserver to sync Column 2 active state on scroll
+  useEffect(() => {
+    const container = col2ScrollRef.current;
+    if (!container || col2PRs.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const prId = entry.target.getAttribute('data-pr-id');
+            if (prId) setActiveCol2PRId(prId);
+          }
+        });
+      },
+      { root: container, threshold: 0.3 }
+    );
+
+    col2PRs.forEach(({ pr }) => {
+      const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
+      const el = document.getElementById(`col2-${cardId}`);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [col2PRs]);
 
   const handleSelectPR = (cardId: string) => {
-    setActivePRId(cardId);
-    // Find PR's repo
     const foundPR = prsWithGates.find(
       ({ pr }) => `pr-card-${pr.repo_full_name}-${pr.number}` === cardId
     );
-    if (foundPR) {
-      const repoName = foundPR.pr.repo_full_name;
-      // If repo is not visible in either column, switch column 2 to show it
-      if (col1Repo !== repoName && col2Repo !== repoName) {
-        setCol2Repo(repoName);
-      }
+    if (!foundPR) return;
+
+    const repoName = foundPR.pr.repo_full_name;
+    const inCol1 = col1PRs.some(
+      ({ pr }) => `pr-card-${pr.repo_full_name}-${pr.number}` === cardId
+    );
+    const inCol2 = col2PRs.some(
+      ({ pr }) => `pr-card-${pr.repo_full_name}-${pr.number}` === cardId
+    );
+
+    if (inCol1) {
+      setActiveCol1PRId(cardId);
+    }
+    if (inCol2) {
+      setActiveCol2PRId(cardId);
+    }
+
+    if (!inCol1 && !inCol2) {
+      setCol2Repo(repoName);
+      setActiveCol2PRId(cardId);
     }
 
     setTimeout(() => {
-      const actionBarElement = document.getElementById(`${cardId}-action-bar`);
-      if (actionBarElement) {
-        actionBarElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      } else {
-        const element = document.getElementById(cardId);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      if (inCol1 || (!inCol1 && !inCol2)) {
+        const targetId = `col1-${cardId}`;
+        const actionBar = document.getElementById(`${targetId}-action-bar`);
+        if (actionBar) {
+          actionBar.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        } else {
+          const el = document.getElementById(targetId);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      }
+      if (inCol2) {
+        const targetId = `col2-${cardId}`;
+        const actionBar = document.getElementById(`${targetId}-action-bar`);
+        if (actionBar) {
+          actionBar.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        } else {
+          const el = document.getElementById(targetId);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
       }
     }, 100);
@@ -207,41 +328,6 @@ export default function Dashboard() {
       throw new Error(data.error || 'Failed to spawn agent in terminal');
     }
   };
-
-  // Filtered PR list — excluding bot accounts
-  const searchFilteredPRs = prsWithGates.filter(({ pr }) => {
-    const isBot =
-      pr.user?.login === 'github-actions[bot]' ||
-      pr.user?.login?.toLowerCase().includes('github-actions');
-    return !isBot;
-  });
-
-  // Sort PRs:
-  // 1. Top: PRs where user (Rasalp1) does NOT have the latest comment/description
-  // 2. Bottom: PRs where user (Rasalp1) HAS the latest comment/description
-  // 3. Secondary sort: PR number descending
-  const sortedPRs = [...searchFilteredPRs].sort((a, b) => {
-    const targetUser = (currentUser || 'Rasalp1').toLowerCase();
-    const aLastUser = (a.pr.last_comment?.user?.login || a.pr.user.login).toLowerCase();
-    const bLastUser = (b.pr.last_comment?.user?.login || b.pr.user.login).toLowerCase();
-
-    const aIsUserLast = aLastUser === targetUser;
-    const bIsUserLast = bLastUser === targetUser;
-
-    if (aIsUserLast !== bIsUserLast) {
-      return aIsUserLast ? 1 : -1;
-    }
-
-    return b.pr.number - a.pr.number;
-  });
-
-  // Filter PRs for Column 1 & Column 2
-  const col1PRs = sortedPRs.filter(
-    ({ pr }) => col1Repo === 'ALL' || pr.repo_full_name === col1Repo
-  );
-  const col2PRs = sortedPRs.filter(
-    ({ pr }) => col2Repo === 'ALL' || pr.repo_full_name === col2Repo
-  );
 
   // Count & List PRs where target user (currentUser or Rasalp1) does NOT have the latest comment or description
   const targetUser = (currentUser || 'Rasalp1').toLowerCase();
@@ -331,7 +417,8 @@ export default function Dashboard() {
             {/* PR Sidebar navigation */}
             <PRSidebar
               prsWithGates={sortedPRs}
-              activePRId={activePRId}
+              activeCol1PRId={activeCol1PRId}
+              activeCol2PRId={activeCol2PRId}
               onSelectPR={handleSelectPR}
             />
 
@@ -366,7 +453,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Column 1 Scrollable Content */}
-                <div className="flex-1 overflow-y-auto pr-1 space-y-6">
+                <div ref={col1ScrollRef} className="flex-1 overflow-y-auto pr-1 space-y-6">
                   {col1PRs.length === 0 ? (
                     <div className="p-8 text-center rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-400 italic">
                       No open PRs found for <strong className="text-gray-600">{col1Repo}</strong>.
@@ -376,9 +463,11 @@ export default function Dashboard() {
                       const cardId = `pr-card-${item.pr.repo_full_name}-${item.pr.number}`;
                       return (
                         <PRCard
-                          key={cardId}
+                          key={`col1-${cardId}`}
+                          customId={`col1-${cardId}`}
                           prWithGates={item}
-                          isSelected={activePRId === cardId}
+                          isSelected={activeCol1PRId === cardId}
+                          columnTheme="blue"
                           onTriggerGate={(prWithGates, gateResult) =>
                             setActiveGateTrigger({ prWithGates, gateResult })
                           }
@@ -418,7 +507,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Column 2 Scrollable Content */}
-                <div className="flex-1 overflow-y-auto pr-1 space-y-6">
+                <div ref={col2ScrollRef} className="flex-1 overflow-y-auto pr-1 space-y-6">
                   {col2PRs.length === 0 ? (
                     <div className="p-8 text-center rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-400 italic">
                       No open PRs found for <strong className="text-gray-600">{col2Repo}</strong>.
@@ -428,9 +517,11 @@ export default function Dashboard() {
                       const cardId = `pr-card-${item.pr.repo_full_name}-${item.pr.number}`;
                       return (
                         <PRCard
-                          key={cardId}
+                          key={`col2-${cardId}`}
+                          customId={`col2-${cardId}`}
                           prWithGates={item}
-                          isSelected={activePRId === cardId}
+                          isSelected={activeCol2PRId === cardId}
+                          columnTheme="purple"
                           onTriggerGate={(prWithGates, gateResult) =>
                             setActiveGateTrigger({ prWithGates, gateResult })
                           }

@@ -21,17 +21,7 @@ export const DEFAULT_RULES: LogicalGateRule[] = [
       prOwnedByCurrentUser: true,
       lastCommentNotCurrentUser: true,
     },
-    promptTemplate: `Address review issues and requested changes for PR #{pr_number} ({pr_title}).
-Repository: {repo_name}
-Target Branch: {branch}
-
-Recent discussion and review feedback:
-{comments_summary}
-
-Task:
-1. Inspect the codebase for the files referenced in the comments.
-2. Make the required edits and code adjustments on disk to address all reviewer feedback.
-3. Test your changes locally to ensure clean execution.`,
+    promptTemplate: `Address review issues and requested changes for PR #{pr_number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer  blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
   },
   {
     id: 'code-review',
@@ -46,13 +36,7 @@ Task:
       prOwnedByNonCurrentUser: true,
       hasNoComments: true,
     },
-    promptTemplate: `Perform a thorough code review for PR #{pr_number} ({pr_title}) in repository {repo_name}.
-Review the latest changes on branch '{branch}' compared to base '{base_branch}'.
-
-Instructions:
-1. Examine git status, modified files, and diffs on branch {branch}.
-2. Check for logic issues, edge cases, performance, or styling defects.
-3. Fix any identified bugs or address review comments directly on disk.`,
+    promptTemplate: `/review`,
   },
   {
     id: 'review-with-context',
@@ -68,19 +52,7 @@ Instructions:
       hasCommentsByCurrentUser: true,
       lastCommentNotCurrentUser: true,
     },
-    promptTemplate: `Perform a code review for PR #{pr_number} ({pr_title}) in repository {repo_name} taking into account our prior context and discussion.
-Review the latest changes on branch '{branch}' compared to base '{base_branch}'.
-
-Discussion summary and prior context:
-{comments_summary}
-
-Latest comment from @{last_comment_author}:
-"{last_comment_body}"
-
-Instructions:
-1. Review the new comments and changes in context of our previous feedback.
-2. Inspect the codebase for changes on branch {branch}.
-3. Address open questions or fix identified issues directly on disk.`,
+    promptTemplate: `Look at the complete comment history on the pr that exists on this branch, PR #{pr_number}. We’re the reviewer. Has the author adressed all the issues we identified? Are there any new issues that have been created? Is the author pushing back on anything we’ve said in a previous review? Why? Do they do so rightfully, or are they just disobedient? Do a complete code review of this PR. Think long and hard to verify that the claimed fixes are in place, and try to find any new issues that have arisen, and try to find unrelated issues on this PR that were missed before! When you’ve completed your code review and identified, issues, post a very detailed “changes requested” comment on the PR. `,
   },
   {
     id: 'rebase-user-pr',
@@ -95,8 +67,7 @@ Instructions:
       prOwnedByCurrentUser: true,
       hasMergeConflicts: true,
     },
-    promptTemplate: `Rebase branch '{branch}' for PR #{pr_number} ({pr_title}) in repository {repo_name} onto base branch '{base_branch}'.
-Fetch origin, run git rebase origin/{base_branch}, resolve any merge conflicts, and verify clean test execution.`,
+    promptTemplate: `Rebase branch '{branch}' for PR #{pr_number} ({pr_title}) in repository {repo_name} onto main. \n\nFetch origin, run git rebase origin/{base_branch}, resolve any merge conflicts, and verify clean test execution. Don't look at only git-identified conflicts, but also at structural intention. Take a step back and assess the codebase as a whole. Does anything break with the merge? Are any intentions, from either side, lost?\n\nOnce you’re done, force push the changes to the branch and post a simple comment with just "Rebased".`,
   },
   {
     id: 'rebase-non-user-pr',
@@ -111,7 +82,7 @@ Fetch origin, run git rebase origin/{base_branch}, resolve any merge conflicts, 
       prOwnedByNonCurrentUser: true,
       hasMergeConflicts: true,
     },
-    promptTemplate: `@pr_author Please rebase this pull request onto current base branch ({base_branch}) to resolve merge conflicts.`,
+    promptTemplate: `@pr_author Please rebase this pull request onto main to resolve merge conflicts.`,
   },
 ];
 
