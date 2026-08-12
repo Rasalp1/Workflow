@@ -240,4 +240,48 @@ export async function spawnWorktreeInAntigravity({
   }
 }
 
+export interface CloseAllWorktreesOptions {
+  targetRepoPath: string;
+  repoPaths: string[];
+}
+
+/**
+ * Opens a terminal tab in the target repo in Antigravity IDE and executes terminal commands directly
+ * (non-agentic) to close all worktrees existing in the specified repos.
+ */
+export async function closeAllWorktreesInTerminal({
+  targetRepoPath,
+  repoPaths,
+}: CloseAllWorktreesOptions): Promise<{ success: boolean; message: string }> {
+  try {
+    validateLocalPath(targetRepoPath);
+    repoPaths.forEach((p) => validateLocalPath(p));
+
+    const cleanTarget = targetRepoPath.replace(/\/$/, '');
+    const cleanRepoPaths = Array.from(new Set(repoPaths.map((p) => p.replace(/\/$/, ''))));
+
+    const repoListStr = cleanRepoPaths.map((p) => `"${p}"`).join(' ');
+    const cliCommand = `for repo in ${repoListStr}; do echo "=== Closing worktrees for $repo ===" && git -C "$repo" worktree list --porcelain | grep '^worktree ' | cut -d' ' -f2- | tail -n +2 | while read -r wt; do echo "Removing worktree: $wt" && git -C "$repo" worktree remove --force "$wt"; done && git -C "$repo" worktree prune; done; echo "=== All worktrees closed successfully ==="`;
+
+    await openTerminalInAntigravity({
+      cleanRepoPath: cleanTarget,
+      targetDir: cleanTarget,
+      cliCommand,
+    });
+
+    return {
+      success: true,
+      message: `Opened terminal in ${cleanTarget} and executed commands to close all worktrees for ${cleanRepoPaths.length} repo(s)`,
+    };
+  } catch (error: unknown) {
+    console.error('Failed to close worktrees in terminal:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      message: `Failed to close worktrees in terminal: ${msg}`,
+    };
+  }
+}
+
+
 
