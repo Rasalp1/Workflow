@@ -215,6 +215,7 @@ export const PRCard: React.FC<PRCardProps> = ({
 
             <span className="text-xs text-gray-700 flex items-center gap-1.5 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-200">
               {pr.user.avatar_url ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img src={pr.user.avatar_url} alt={pr.user.login} className="w-4 h-4 rounded-full" />
               ) : (
                 <User className="w-3.5 h-3.5 text-gray-400" />
@@ -308,6 +309,7 @@ export const PRCard: React.FC<PRCardProps> = ({
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-gray-100 w-full">
                   <div className="flex items-center gap-2 flex-wrap">
                     {comment.user.avatar_url ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img
                         src={comment.user.avatar_url}
                         alt={comment.user.login}

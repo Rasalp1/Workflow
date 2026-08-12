@@ -150,32 +150,25 @@ export default function Dashboard() {
     );
   }, [sortedPRs, col2Repo]);
 
-  // Auto-set default active PRs for Column 1 & Column 2 if none selected or no longer available
-  useEffect(() => {
-    if (col1PRs.length > 0) {
-      const exists = col1PRs.some(
-        ({ pr }) => `pr-card-${pr.repo_full_name}-${pr.number}` === activeCol1PRId
-      );
-      if (!activeCol1PRId || !exists) {
-        setActiveCol1PRId(`pr-card-${col1PRs[0].pr.repo_full_name}-${col1PRs[0].pr.number}`);
-      }
-    } else {
-      setActiveCol1PRId(null);
-    }
+  // Compute effective active PR IDs for Column 1 & Column 2
+  const effectiveActiveCol1PRId = React.useMemo(() => {
+    if (col1PRs.length === 0) return null;
+    const exists = col1PRs.some(
+      ({ pr }) => `pr-card-${pr.repo_full_name}-${pr.number}` === activeCol1PRId
+    );
+    if (activeCol1PRId && exists) return activeCol1PRId;
+    return `pr-card-${col1PRs[0].pr.repo_full_name}-${col1PRs[0].pr.number}`;
   }, [col1PRs, activeCol1PRId]);
 
-  useEffect(() => {
-    if (col2PRs.length > 0) {
-      const exists = col2PRs.some(
-        ({ pr }) => `pr-card-${pr.repo_full_name}-${pr.number}` === activeCol2PRId
-      );
-      if (!activeCol2PRId || !exists) {
-        setActiveCol2PRId(`pr-card-${col2PRs[0].pr.repo_full_name}-${col2PRs[0].pr.number}`);
-      }
-    } else {
-      setActiveCol2PRId(null);
-    }
+  const effectiveActiveCol2PRId = React.useMemo(() => {
+    if (col2PRs.length === 0) return null;
+    const exists = col2PRs.some(
+      ({ pr }) => `pr-card-${pr.repo_full_name}-${pr.number}` === activeCol2PRId
+    );
+    if (activeCol2PRId && exists) return activeCol2PRId;
+    return `pr-card-${col2PRs[0].pr.repo_full_name}-${col2PRs[0].pr.number}`;
   }, [col2PRs, activeCol2PRId]);
+
 
   // IntersectionObserver to sync Column 1 active state on scroll
   useEffect(() => {
@@ -417,8 +410,8 @@ export default function Dashboard() {
             {/* PR Sidebar navigation */}
             <PRSidebar
               prsWithGates={sortedPRs}
-              activeCol1PRId={activeCol1PRId}
-              activeCol2PRId={activeCol2PRId}
+              activeCol1PRId={effectiveActiveCol1PRId}
+              activeCol2PRId={effectiveActiveCol2PRId}
               onSelectPR={handleSelectPR}
             />
 
@@ -466,7 +459,7 @@ export default function Dashboard() {
                           key={`col1-${cardId}`}
                           customId={`col1-${cardId}`}
                           prWithGates={item}
-                          isSelected={activeCol1PRId === cardId}
+                          isSelected={effectiveActiveCol1PRId === cardId}
                           columnTheme="blue"
                           onTriggerGate={(prWithGates, gateResult) =>
                             setActiveGateTrigger({ prWithGates, gateResult })
@@ -520,7 +513,7 @@ export default function Dashboard() {
                           key={`col2-${cardId}`}
                           customId={`col2-${cardId}`}
                           prWithGates={item}
-                          isSelected={activeCol2PRId === cardId}
+                          isSelected={effectiveActiveCol2PRId === cardId}
                           columnTheme="purple"
                           onTriggerGate={(prWithGates, gateResult) =>
                             setActiveGateTrigger({ prWithGates, gateResult })
