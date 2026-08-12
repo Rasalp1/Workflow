@@ -12,6 +12,7 @@ interface PromptModalProps {
   onConfirmSpawn: (payload: {
     repoFullName: string;
     localPath: string;
+    branchName?: string;
     agent: AgentType;
     prompt: string;
   }) => Promise<void>;
@@ -72,6 +73,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({
         await onConfirmSpawn({
           repoFullName: pr.repo_full_name,
           localPath: pr.local_path || '',
+          branchName: pr.head.ref,
           agent: selectedAgent,
           prompt: promptText,
         });

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { AppConfig } from '@/types';
-import { X, Save, Key, GitBranch, Folder, ShieldCheck } from 'lucide-react';
+import { X, Save, Key, GitBranch, Folder, ShieldCheck, Zap } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -21,6 +21,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [githubToken, setGithubToken] = useState('');
   const [monitoredReposStr, setMonitoredReposStr] = useState('');
   const [repoPaths, setRepoPaths] = useState<Record<string, string>>({});
+  const [directAgentSpawn, setDirectAgentSpawn] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   if (config && config !== prevConfig) {
@@ -28,6 +29,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setGithubToken(config.maskedToken || config.githubToken || '');
     setMonitoredReposStr((config.monitoredRepos || []).join(', '));
     setRepoPaths(config.repoPaths || {});
+    setDirectAgentSpawn(!!config.directAgentSpawn);
   }
 
   if (!isOpen || !config) return null;
@@ -51,6 +53,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         githubToken: githubToken.includes('...') ? config.githubToken : githubToken,
         monitoredRepos: repos,
         repoPaths,
+        directAgentSpawn,
       });
 
       onClose();
@@ -118,6 +121,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onChange={(e) => setMonitoredReposStr(e.target.value)}
               className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-mono text-gray-800 focus:outline-none focus:border-purple-400 focus:bg-white transition-colors"
             />
+          </div>
+
+          {/* Direct Agent Spawning Toggle */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border border-blue-100 flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5 font-semibold text-xs text-gray-900">
+                <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                <span>Direct AI Agent Launching</span>
+              </div>
+              <p className="text-[11px] text-gray-500 leading-relaxed">
+                Skip prompt confirmation modal and immediately launch the AI agent in Antigravity IDE when clicking action buttons.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={directAgentSpawn}
+              onClick={() => setDirectAgentSpawn(!directAgentSpawn)}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                directAgentSpawn ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  directAgentSpawn ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
           </div>
 
           {/* Local Folder Mappings */}

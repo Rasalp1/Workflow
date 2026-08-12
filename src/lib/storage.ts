@@ -21,7 +21,7 @@ export const DEFAULT_RULES: LogicalGateRule[] = [
       prOwnedByCurrentUser: true,
       lastCommentNotCurrentUser: true,
     },
-    promptTemplate: `Address review issues and requested changes for PR #{pr_number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer  blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
+    promptTemplate: `Address review issues for PR #{pr_number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer  blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
   },
   {
     id: 'code-review',
@@ -127,6 +127,7 @@ export async function loadConfig(): Promise<AppConfig> {
     defaultAgent: (process.env.DEFAULT_AGENT as AgentType) || 'codex',
     monitoredRepos: envRepos.length > 0 ? envRepos : ['OSRA-1/MEDSAM-production', 'Rasalp1/MedSAMapp'],
     repoPaths: envPaths,
+    directAgentSpawn: false,
   };
 
   if (existsSync(CONFIG_FILE)) {

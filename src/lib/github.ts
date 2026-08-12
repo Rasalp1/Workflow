@@ -1,6 +1,6 @@
 import { PRComment, PullRequest } from '@/types';
 
-async function fetchGitHubAPI(endpoint: string, token?: string) {
+async function fetchGitHubAPI(endpoint: string, token?: string, noCache = true) {
   const authToken = token || process.env.GITHUB_TOKEN;
   const headers: Record<string, string> = {
     'Accept': 'application/vnd.github.v3+json',
@@ -11,10 +11,12 @@ async function fetchGitHubAPI(endpoint: string, token?: string) {
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const res = await fetch(`https://api.github.com${endpoint}`, {
+  const fetchOptions: RequestInit = {
     headers,
-    next: { revalidate: 30 }, // 30s cache
-  });
+    ...(noCache ? { cache: 'no-store' } : { next: { revalidate: 30 } }),
+  };
+
+  const res = await fetch(`https://api.github.com${endpoint}`, fetchOptions);
 
   if (!res.ok) {
     const errorText = await res.text();
@@ -22,6 +24,24 @@ async function fetchGitHubAPI(endpoint: string, token?: string) {
   }
 
   return res.json();
+}
+
+async function fetchAllGitHubPages(endpoint: string, token?: string): Promise<Record<string, unknown>[]> {
+  const allData: Record<string, unknown>[] = [];
+  let page = 1;
+  const maxPages = 5; // Cap at 500 entries per type
+
+  while (page <= maxPages) {
+    const separator = endpoint.includes('?') ? '&' : '?';
+    const pageEndpoint = `${endpoint}${separator}per_page=100&page=${page}`;
+    const data = await fetchGitHubAPI(pageEndpoint, token, true).catch(() => []);
+    if (!Array.isArray(data) || data.length === 0) break;
+    allData.push(...data);
+    if (data.length < 100) break;
+    page++;
+  }
+
+  return allData;
 }
 
 export async function getRepoPullRequests(
@@ -34,7 +54,7 @@ export async function getRepoPullRequests(
   }
 
   // Fetch open pull requests
-  const prsData = await fetchGitHubAPI(`/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc`, token);
+  const prsData = await fetchGitHubAPI(`/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc`, token, true);
 
   // Filter out PRs created by github-actions[bot]
   const validPrsData = (prsData || []).filter(
@@ -54,46 +74,70 @@ export async function getRepoPullRequests(
       const base = rawPr.base as { ref: string };
       const user = rawPr.user as { login: string; avatar_url: string; html_url: string };
 
-      // Fetch single PR details, issue comments & review comments in parallel (up to 100 per page)
-      const [singlePrDetails, issueComments, reviewComments, combinedStatus] = await Promise.all([
-        fetchGitHubAPI(`/repos/${owner}/${repo}/pulls/${prNumber}`, token).catch(() => null),
-        fetchGitHubAPI(`/repos/${owner}/${repo}/issues/${prNumber}/comments?per_page=100`, token).catch(() => []),
-        fetchGitHubAPI(`/repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100`, token).catch(() => []),
-        fetchGitHubAPI(`/repos/${owner}/${repo}/commits/${head.sha}/status`, token).catch(() => null),
+      // Fetch single PR details, issue comments, inline review comments & PR reviews in parallel (all pages)
+      const [singlePrDetails, issueComments, reviewComments, prReviews, combinedStatus] = await Promise.all([
+        fetchGitHubAPI(`/repos/${owner}/${repo}/pulls/${prNumber}`, token, true).catch(() => null),
+        fetchAllGitHubPages(`/repos/${owner}/${repo}/issues/${prNumber}/comments`, token).catch(() => []),
+        fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, token).catch(() => []),
+        fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, token).catch(() => []),
+        fetchGitHubAPI(`/repos/${owner}/${repo}/commits/${head.sha}/status`, token, true).catch(() => null),
       ]);
 
       const formattedIssueComments: PRComment[] = (issueComments || []).map((c: Record<string, unknown>) => ({
         id: c.id as number,
         user: {
-          login: (c.user as { login: string }).login,
-          avatar_url: (c.user as { avatar_url: string }).avatar_url,
-          html_url: (c.user as { html_url: string }).html_url,
+          login: (c.user as { login: string })?.login || 'unknown',
+          avatar_url: (c.user as { avatar_url: string })?.avatar_url || '',
+          html_url: (c.user as { html_url: string })?.html_url || '',
         },
         body: (c.body as string) || '',
-        created_at: c.created_at as string,
-        updated_at: c.updated_at as string,
-        html_url: c.html_url as string,
+        created_at: (c.created_at as string) || new Date().toISOString(),
+        updated_at: (c.updated_at as string) || new Date().toISOString(),
+        html_url: (c.html_url as string) || '',
         is_review_comment: false,
       }));
 
       const formattedReviewComments: PRComment[] = (reviewComments || []).map((c: Record<string, unknown>) => ({
         id: c.id as number,
         user: {
-          login: (c.user as { login: string }).login,
-          avatar_url: (c.user as { avatar_url: string }).avatar_url,
-          html_url: (c.user as { html_url: string }).html_url,
+          login: (c.user as { login: string })?.login || 'unknown',
+          avatar_url: (c.user as { avatar_url: string })?.avatar_url || '',
+          html_url: (c.user as { html_url: string })?.html_url || '',
         },
         body: (c.body as string) || '',
-        created_at: c.created_at as string,
-        updated_at: c.updated_at as string,
-        html_url: c.html_url as string,
+        created_at: (c.created_at as string) || new Date().toISOString(),
+        updated_at: (c.updated_at as string) || new Date().toISOString(),
+        html_url: (c.html_url as string) || '',
         path: c.path as string | undefined,
         position: c.position as number | undefined,
         line: c.line as number | undefined,
         is_review_comment: true,
       }));
 
-      const allComments = [...formattedIssueComments, ...formattedReviewComments].sort(
+      // Convert ALL PR review submissions (Approved, Changes Requested, Commented, etc.) into comments
+      const formattedReviews: PRComment[] = (prReviews || []).map((r: Record<string, unknown>) => {
+        const rawBody = (r.body as string) || '';
+        const state = (r.state as string) || 'REVIEW';
+        const formattedState = state.replace(/_/g, ' ');
+        const fallbackBody = `*Submitted PR review: ${formattedState}*`;
+
+        return {
+          id: r.id as number,
+          user: {
+            login: (r.user as { login: string })?.login || 'unknown',
+            avatar_url: (r.user as { avatar_url: string })?.avatar_url || '',
+            html_url: (r.user as { html_url: string })?.html_url || '',
+          },
+          body: rawBody.trim().length > 0 ? rawBody : fallbackBody,
+          created_at: ((r.submitted_at || r.created_at) as string) || new Date().toISOString(),
+          updated_at: ((r.submitted_at || r.created_at) as string) || new Date().toISOString(),
+          html_url: (r.html_url as string) || '',
+          is_review_comment: true,
+          review_state: state,
+        };
+      });
+
+      const allComments = [...formattedIssueComments, ...formattedReviewComments, ...formattedReviews].sort(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
 
@@ -135,8 +179,8 @@ export async function getRepoPullRequests(
         repo_owner: owner,
         repo_name: repo,
         repo_full_name: repoFullName,
-        comments_count: (rawPr.comments as number) + (rawPr.review_comments as number),
-        review_comments_count: rawPr.review_comments as number,
+        comments_count: allComments.length,
+        review_comments_count: formattedReviewComments.length + formattedReviews.length,
         comments: allComments,
         last_comment: lastComment,
         checks_status: checksStatus,

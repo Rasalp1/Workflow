@@ -17,6 +17,7 @@ export interface PRComment {
   position?: number;
   line?: number;
   is_review_comment: boolean;
+  review_state?: string;
 }
 
 export interface PullRequest {
@@ -80,6 +81,7 @@ export interface AppConfig {
   defaultAgent: AgentType;
   monitoredRepos: string[]; // e.g. ["owner/repo1", "owner/repo2"]
   repoPaths: Record<string, string>; // "owner/repo" -> "/Users/..."
+  directAgentSpawn?: boolean; // If true, bypass prompt modal and spawn immediately
   maskedToken?: string;
   hasToken?: boolean;
 }

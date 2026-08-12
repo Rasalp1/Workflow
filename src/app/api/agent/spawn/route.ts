@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   try {
     validateOrigin(request);
     const body = await request.json();
-    const { repoFullName, localPath, agent, prompt } = body;
+    const { repoFullName, localPath, branchName, agent, prompt } = body;
 
     if (!prompt) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
@@ -33,6 +33,7 @@ export async function POST(request: Request) {
 
     const result = await spawnAgentInTerminal({
       repoPath: targetPath,
+      branchName,
       agent: targetAgent,
       prompt,
     });

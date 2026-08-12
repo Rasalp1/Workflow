@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { EvaluatedGateResult, PRWithGates } from '@/types';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import {
@@ -16,7 +16,6 @@ import {
   Code2,
   FileCode,
   GitBranch,
-  Check,
 } from 'lucide-react';
 
 interface PRCardProps {
@@ -38,37 +37,6 @@ export const PRCard: React.FC<PRCardProps> = ({
   const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
   const elementId = customId || cardId;
   const passedGates = evaluatedGates.filter((g) => g.passed);
-
-  const [isSpawningWorktree, setIsSpawningWorktree] = useState(false);
-  const [worktreeStatus, setWorktreeStatus] = useState<{ success: boolean; message: string } | null>(null);
-
-  const handleSpawnWorktree = async () => {
-    setIsSpawningWorktree(true);
-    setWorktreeStatus(null);
-    try {
-      const res = await fetch('/api/worktree/spawn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          repoFullName: pr.repo_full_name,
-          localPath: pr.local_path,
-          branchName: pr.head.ref,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setWorktreeStatus({ success: false, message: data.error || 'Failed to spawn worktree' });
-      } else {
-        setWorktreeStatus({ success: true, message: data.message || 'Worktree opened in Antigravity IDE!' });
-        setTimeout(() => setWorktreeStatus(null), 6000);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Network error spawning worktree';
-      setWorktreeStatus({ success: false, message: msg });
-    } finally {
-      setIsSpawningWorktree(false);
-    }
-  };
 
   const getGateIcon = (iconName?: string) => {
     switch (iconName) {
@@ -152,17 +120,6 @@ export const PRCard: React.FC<PRCardProps> = ({
               <Code2 className="w-3 h-3 text-gray-400" />
               {pr.head.ref} → {pr.base.ref}
             </span>
-
-            {/* Worktree Button */}
-            <button
-              onClick={handleSpawnWorktree}
-              disabled={isSpawningWorktree}
-              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white hover:bg-blue-50 text-blue-700 text-xs font-medium border border-blue-200 hover:border-blue-300 transition-all disabled:opacity-50"
-              title={`Spawn Git Worktree for branch "${pr.head.ref}" in Antigravity IDE`}
-            >
-              <GitBranch className="w-3 h-3 shrink-0" />
-              <span>{isSpawningWorktree ? 'Spawning...' : 'Worktree'}</span>
-            </button>
           </div>
 
           <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
@@ -228,58 +185,18 @@ export const PRCard: React.FC<PRCardProps> = ({
 
       {/* High-Visibility Conflict Callout Banner */}
       {pr.has_merge_conflicts && (
-        <div className="mt-4 p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="p-1.5 rounded-lg bg-rose-100 text-rose-500 shrink-0">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="text-sm font-semibold text-rose-800 flex items-center gap-2">
-                Merge Conflicts against <code className="bg-rose-100 px-1.5 py-0.5 rounded text-rose-700 font-mono text-xs">{pr.base.ref}</code>
-              </h4>
-              <p className="text-xs text-rose-600 mt-0.5 leading-relaxed">
-                Branch <span className="font-mono text-rose-800 font-semibold">{pr.head.ref}</span> cannot be automatically merged into <span className="font-mono text-rose-800 font-semibold">{pr.base.ref}</span>. Rebase or merge to resolve conflicts before deploying agent workflows.
-              </p>
-            </div>
+        <div className="mt-4 p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-3">
+          <div className="p-1.5 rounded-lg bg-rose-100 text-rose-500 shrink-0">
+            <AlertTriangle className="w-4 h-4" />
           </div>
-
-          <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
-            <button
-              onClick={handleSpawnWorktree}
-              disabled={isSpawningWorktree}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold border border-rose-700 transition-all disabled:opacity-50"
-              title={`Spawn Git Worktree for branch "${pr.head.ref}" to resolve conflicts`}
-            >
-              <GitBranch className="w-3.5 h-3.5" />
-              <span>{isSpawningWorktree ? 'Opening...' : 'Resolve via Worktree'}</span>
-            </button>
+          <div>
+            <h4 className="text-sm font-semibold text-rose-800 flex items-center gap-2">
+              Merge Conflicts against <code className="bg-rose-100 px-1.5 py-0.5 rounded text-rose-700 font-mono text-xs">{pr.base.ref}</code>
+            </h4>
+            <p className="text-xs text-rose-600 mt-0.5 leading-relaxed">
+              Branch <span className="font-mono text-rose-800 font-semibold">{pr.head.ref}</span> cannot be automatically merged into <span className="font-mono text-rose-800 font-semibold">{pr.base.ref}</span>. Rebase or merge to resolve conflicts before deploying agent workflows.
+            </p>
           </div>
-        </div>
-      )}
-
-      {/* Worktree Spawning Notification Banner */}
-      {worktreeStatus && (
-        <div
-          className={`mt-3 p-3 rounded-lg border text-xs flex items-center justify-between gap-2 ${
-            worktreeStatus.success
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-rose-50 border-rose-200 text-rose-800'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {worktreeStatus.success ? (
-              <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
-            )}
-            <span>{worktreeStatus.message}</span>
-          </div>
-          <button
-            onClick={() => setWorktreeStatus(null)}
-            className="text-[11px] text-gray-500 hover:text-gray-700 font-medium"
-          >
-            Dismiss
-          </button>
         </div>
       )}
 
@@ -302,7 +219,7 @@ export const PRCard: React.FC<PRCardProps> = ({
           <div className="space-y-3 w-full" id="comment-thread">
             {pr.comments.map((comment) => (
               <div
-                key={comment.id}
+                key={`${comment.id}-${comment.review_state || (comment.is_review_comment ? 'rev' : 'iss')}`}
                 className="w-full rounded-lg bg-white border border-gray-200 p-4 shadow-sm space-y-3 transition-colors hover:border-gray-300"
               >
                 {/* Comment Author Header */}
@@ -327,7 +244,20 @@ export const PRCard: React.FC<PRCardProps> = ({
                       @{comment.user.login}
                     </a>
 
-                    {comment.is_review_comment ? (
+                    {comment.review_state ? (
+                      <span
+                        className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md font-mono border font-semibold ${
+                          comment.review_state === 'CHANGES_REQUESTED'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            : comment.review_state === 'APPROVED'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-purple-50 text-purple-700 border-purple-200'
+                        }`}
+                      >
+                        <FileCode className="w-3 h-3" />
+                        PR Review: {comment.review_state.replace(/_/g, ' ')}
+                      </span>
+                    ) : comment.is_review_comment ? (
                       <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-mono border border-purple-200">
                         <FileCode className="w-3 h-3" />
                         Code Review {comment.path ? `: ${comment.path}${comment.line ? `#L${comment.line}` : ''}` : ''}
@@ -358,7 +288,7 @@ export const PRCard: React.FC<PRCardProps> = ({
         )}
       </div>
 
-      {/* Action Bar: Logic Gates & Spawner Buttons */}
+      {/* Action Bar: Logic Gates Buttons */}
       <div id={`${elementId}-action-bar`} className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-mono font-semibold border border-blue-200">
@@ -368,17 +298,6 @@ export const PRCard: React.FC<PRCardProps> = ({
             <GitBranch className="w-3 h-3 text-gray-400" />
             {pr.head.ref}
           </span>
-
-          {/* Worktree Button */}
-          <button
-            onClick={handleSpawnWorktree}
-            disabled={isSpawningWorktree}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white hover:bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-200 hover:border-blue-300 shadow-sm transition-all disabled:opacity-50"
-            title={`Spawn Git Worktree for branch "${pr.head.ref}" in Antigravity IDE`}
-          >
-            <GitBranch className="w-3.5 h-3.5 shrink-0 text-blue-600" />
-            <span>{isSpawningWorktree ? 'Spawning...' : 'Worktree'}</span>
-          </button>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -406,3 +325,4 @@ export const PRCard: React.FC<PRCardProps> = ({
     </div>
   );
 };
+
