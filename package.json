@@ -1,7 +1,9 @@
 {
-  "name": "workflow-app",
+  "name": "workflow-pr-viewer",
   "version": "0.1.0",
-  "private": true,
+  "description": "Local-first PR management & CLI AI agent dispatcher dashboard",
+  "license": "MIT",
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
