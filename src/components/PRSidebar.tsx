@@ -1,14 +1,13 @@
-'use client';
-
 import React from 'react';
-import { PRWithGates } from '@/types';
-import { CheckCircle2, AlertCircle, Clock, Layers, AlertTriangle } from 'lucide-react';
+import { ActiveAgentInfo, PRWithGates } from '@/types';
+import { CheckCircle2, AlertCircle, Clock, Layers, AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface PRSidebarProps {
   prsWithGates: PRWithGates[];
   activeCol1PRId?: string | null;
   activeCol2PRId?: string | null;
   activePRId?: string | null;
+  activeAgentPRs?: Record<string, ActiveAgentInfo>;
   onSelectPR: (prId: string) => void;
 }
 
@@ -17,6 +16,7 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({
   activeCol1PRId,
   activeCol2PRId,
   activePRId,
+  activeAgentPRs = {},
   onSelectPR,
 }) => {
   return (
@@ -39,13 +39,19 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({
             const isCol1Active = activeCol1PRId === cardId || (activePRId === cardId && !activeCol2PRId);
             const isCol2Active = activeCol2PRId === cardId;
             const isBothActive = isCol1Active && isCol2Active;
+            const isInProcess = Boolean(activeAgentPRs[cardId]);
+            const agentInfo = activeAgentPRs[cardId];
             const passedGates = evaluatedGates.filter((g) => g.passed);
 
             let containerClasses = 'bg-white hover:bg-gray-50 border-gray-100 hover:border-gray-200';
             let numberClasses = 'text-gray-500 bg-gray-100 border-gray-200';
             let titleClasses = 'text-gray-800 group-hover:text-gray-900';
 
-            if (isBothActive) {
+            if (isInProcess) {
+              containerClasses = 'bg-blue-50/90 border-blue-400 shadow-sm ring-1 ring-blue-300/60';
+              numberClasses = 'text-blue-900 bg-blue-100 border-blue-300 font-bold';
+              titleClasses = 'text-blue-950 font-semibold';
+            } else if (isBothActive) {
               containerClasses =
                 'bg-gradient-to-r from-blue-50/90 to-purple-50/90 border-indigo-300 shadow-sm ring-1 ring-indigo-200/60';
               numberClasses = 'text-indigo-800 bg-indigo-100 border-indigo-200 font-bold';
@@ -76,6 +82,17 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({
                     {pr.repo_name}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
+                    {/* Active Agent In Process Badge */}
+                    {isInProcess && (
+                      <span
+                        className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-600 text-white shadow-2xs tracking-wider uppercase flex items-center gap-1"
+                        title={`Agent working: ${agentInfo?.agent || 'cli agent'}`}
+                      >
+                        <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                        {agentInfo?.agent || 'AGENT'}
+                      </span>
+                    )}
+
                     {/* Active Column Badges */}
                     {isCol1Active && (
                       <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-blue-600 text-white shadow-2xs tracking-wider uppercase">

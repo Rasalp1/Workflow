@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
-import { EvaluatedGateResult, PRWithGates } from '@/types';
+import React, { useState } from 'react';
+import { ActiveAgentInfo, EvaluatedGateResult, PRWithGates } from '@/types';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+import { MergeConfirmModal } from '@/components/MergeConfirmModal';
 import {
   GitPullRequest,
   User,
@@ -16,27 +17,77 @@ import {
   Code2,
   FileCode,
   GitBranch,
+  GitMerge,
+  RefreshCw,
+  X,
 } from 'lucide-react';
 
 interface PRCardProps {
   prWithGates: PRWithGates;
   onTriggerGate: (prWithGates: PRWithGates, gateResult: EvaluatedGateResult) => void;
+  onMergePR?: (prWithGates: PRWithGates) => Promise<void> | void;
   isSelected?: boolean;
   columnTheme?: 'blue' | 'purple';
   customId?: string;
+  isInProcess?: boolean;
+  activeAgentInfo?: ActiveAgentInfo | null;
+  onClearActiveAgent?: (cardId: string) => void;
 }
 
 export const PRCard: React.FC<PRCardProps> = ({
   prWithGates,
   onTriggerGate,
+  onMergePR,
   isSelected,
   columnTheme = 'blue',
   customId,
+  isInProcess,
+  activeAgentInfo,
+  onClearActiveAgent,
 }) => {
   const { pr, evaluatedGates } = prWithGates;
   const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
   const elementId = customId || cardId;
   const passedGates = evaluatedGates.filter((g) => g.passed);
+
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [isMerging, setIsMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
+  const handleOpenMergeModal = () => {
+    setMergeError(null);
+    setIsMergeModalOpen(true);
+  };
+
+  const handleConfirmMerge = async () => {
+    if (isMerging) return;
+    setIsMerging(true);
+    setMergeError(null);
+    try {
+      if (onMergePR) {
+        await onMergePR(prWithGates);
+      } else {
+        const res = await fetch('/api/prs/merge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repoFullName: pr.repo_full_name,
+            prNumber: pr.number,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || 'Failed to merge PR');
+        }
+      }
+      setIsMergeModalOpen(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Merge failed';
+      setMergeError(msg);
+    } finally {
+      setIsMerging(false);
+    }
+  };
 
   const getGateIcon = (iconName?: string) => {
     switch (iconName) {
@@ -89,6 +140,8 @@ export const PRCard: React.FC<PRCardProps> = ({
       id={elementId}
       data-pr-id={cardId}
       className={`card rounded-xl p-5 mb-6 transition-all scroll-mt-20 ${
+        isInProcess ? 'border-blue-400 bg-blue-50/20 ring-1 ring-blue-300/40' : ''
+      } ${
         isSelected
           ? columnTheme === 'purple'
             ? 'border-purple-400 shadow-purple-100 ring-2 ring-purple-400/20'
@@ -96,7 +149,7 @@ export const PRCard: React.FC<PRCardProps> = ({
           : 'border-gray-200'
       }`}
       style={
-        isSelected
+        isSelected && !isInProcess
           ? {
               boxShadow:
                 columnTheme === 'purple'
@@ -182,6 +235,36 @@ export const PRCard: React.FC<PRCardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Agent Working Callout Banner */}
+      {isInProcess && (
+        <div className="mt-4 p-3 rounded-xl bg-gradient-to-r from-blue-50/90 via-indigo-50/90 to-purple-50/90 border border-blue-200 text-blue-900 flex items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-blue-600 text-white shadow-xs shrink-0">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                <span>Agent In Process</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-200/80 text-blue-900 font-mono font-semibold uppercase">
+                  {activeAgentInfo?.agent || 'codex'}
+                </span>
+              </h4>
+              <p className="text-[11px] text-blue-700 font-medium leading-tight mt-0.5">
+                CLI agent active on branch <span className="font-mono text-blue-950 font-bold">{pr.head.ref}</span> in Antigravity IDE terminal.
+              </p>
+            </div>
+          </div>
+          {onClearActiveAgent && (
+            <button
+              onClick={() => onClearActiveAgent(cardId)}
+              className="px-2.5 py-1 rounded-lg bg-white/90 hover:bg-white text-blue-700 hover:text-blue-900 border border-blue-200 text-[11px] font-semibold transition-all shadow-2xs shrink-0"
+            >
+              Mark Done
+            </button>
+          )}
+        </div>
+      )}
 
       {/* High-Visibility Conflict Callout Banner */}
       {pr.has_merge_conflicts && (
@@ -320,8 +403,40 @@ export const PRCard: React.FC<PRCardProps> = ({
               </button>
             ))
           )}
+
+          {!pr.has_merge_conflicts && (
+            <button
+              onClick={handleOpenMergeModal}
+              disabled={isMerging}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 hover:border-emerald-300 transition-all disabled:opacity-50 cursor-pointer"
+              title={`Merge PR #${pr.number} into ${pr.base.ref}`}
+            >
+              {isMerging ? (
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+              ) : (
+                <GitMerge className="w-3.5 h-3.5 text-emerald-600" />
+              )}
+              <span>{isMerging ? 'Merging...' : 'Merge'}</span>
+            </button>
+          )}
+
+          {mergeError && (
+            <span className="text-xs text-rose-600 font-medium" title={mergeError}>
+              {mergeError}
+            </span>
+          )}
         </div>
       </div>
+
+      {/* Custom Centered PR Merge Confirmation Modal */}
+      <MergeConfirmModal
+        isOpen={isMergeModalOpen}
+        onClose={() => !isMerging && setIsMergeModalOpen(false)}
+        pr={pr}
+        onConfirm={handleConfirmMerge}
+        isMerging={isMerging}
+        error={mergeError}
+      />
     </div>
   );
 };

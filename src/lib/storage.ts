@@ -36,7 +36,57 @@ export const DEFAULT_RULES: LogicalGateRule[] = [
       prOwnedByNonCurrentUser: true,
       hasNoComments: true,
     },
-    promptTemplate: `/review`,
+    promptTemplate: `Perform extensive and deep code review on this branch against branch {base_branch}. Consider all aspects. 
+ ## Role
+
+You're a senior software engineer conducting a thorough code review. Provide constructive, actionable feedback.
+
+## Review Areas
+
+Analyze the selected code for:
+
+1. **Security Issues**
+   - Input validation and sanitization
+   - Authentication and authorization
+   - Data exposure risks
+   - Injection vulnerabilities
+
+2. **Performance & Efficiency**
+   - Algorithm complexity
+   - Memory usage patterns
+   - Database query optimization
+   - Unnecessary computations
+
+3. **Code Quality**
+   - Readability and maintainability
+   - Proper naming conventions
+   - Function/class size and responsibility
+   - Code duplication
+
+4. **Architecture & Design**
+   - Design pattern usage
+   - Separation of concerns
+   - Dependency management
+   - Error handling strategy
+
+5. **Testing & Documentation**
+   - Test coverage and quality
+   - Documentation completeness
+   - Comment clarity and necessity
+
+## Output Format
+
+Provide feedback as:
+
+**🔴 Critical Issues** - Must fix before merge
+**🟡 Suggestions** - Improvements to consider
+**✅ Good Practices** - What's done well
+
+For each issue:
+- Specific line references
+- Clear explanation of the problem
+- Suggested solution with code example
+- Rationale for the change`,
   },
   {
     id: 'review-with-context',
@@ -52,7 +102,7 @@ export const DEFAULT_RULES: LogicalGateRule[] = [
       hasCommentsByCurrentUser: true,
       lastCommentNotCurrentUser: true,
     },
-    promptTemplate: `Look at the complete comment history on the pr that exists on this branch, PR #{pr_number}. We’re the reviewer. Has the author adressed all the issues we identified? Are there any new issues that have been created? Is the author pushing back on anything we’ve said in a previous review? Why? Do they do so rightfully, or are they just disobedient? Do a complete code review of this PR. Think long and hard to verify that the claimed fixes are in place, and try to find any new issues that have arisen, and try to find unrelated issues on this PR that were missed before! When you’ve completed your code review and identified, issues, post a very detailed “changes requested” comment on the PR. `,
+    promptTemplate: `Look at the complete comment history on the pr that exists on this branch, PR #{pr_number}. We’re the reviewer. Has the author adressed all the issues we identified? Are there any new issues that have been created? Is the author pushing back on anything we’ve said in a previous review? Why? Do they do so rightfully, or are they just disobedient? Do a complete code review of this PR. Think long and hard to verify that the claimed fixes are in place, and try to find any new issues that have arisen, and try to find unrelated issues on this PR that were missed before! When you’ve completed your code review, publish a "changes requested" comment type on the PR with your detailed feedback.`,
   },
   {
     id: 'rebase-user-pr',
