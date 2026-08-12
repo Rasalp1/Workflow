@@ -38,13 +38,20 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="w-full mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
         {/* Brand Logo & Title */}
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-blue-600 text-white">
-            <GitPullRequest className="w-5 h-5" />
+          <div className="relative p-2 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700/60 shadow-sm text-white flex items-center justify-center">
+            <GitPullRequest className="w-5 h-5 text-sky-400" />
+            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500"></span>
+            </span>
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-semibold text-gray-900">
-                Git Workflow Agent Hub
+              <h1 className="text-base font-bold text-gray-900 tracking-tight flex items-center gap-1.5">
+                <span>Workflow</span>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700">
+                  Agent Hub
+                </span>
               </h1>
               <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-medium">
                 {prCount} Active PRs
