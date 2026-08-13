@@ -10,6 +10,7 @@ interface RulesEditorModalProps {
   onClose: () => void;
   rules: LogicalGateRule[];
   onSaveRules: (updatedRules: LogicalGateRule[]) => Promise<void>;
+  currentUser?: string | null;
 }
 
 export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
@@ -17,6 +18,7 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
   onClose,
   rules,
   onSaveRules,
+  currentUser,
 }) => {
   const [mounted, setMounted] = useState(false);
   const [prevRules, setPrevRules] = useState<LogicalGateRule[] | null>(null);
@@ -264,7 +266,7 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
                       }
                       className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
                     />
-                    <span>PR is owned by current user (Rasalp1)</span>
+                    <span>PR is owned by current user ({currentUser ? `@${currentUser}` : 'owner'})</span>
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer text-gray-700">
@@ -300,7 +302,7 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
                       }
                       className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
                     />
-                    <span>PR has prior context/comment by current user (Rasalp1)</span>
+                    <span>PR has prior context/comment by current user ({currentUser ? `@${currentUser}` : 'owner'})</span>
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer text-gray-700">

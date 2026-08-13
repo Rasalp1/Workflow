@@ -20,12 +20,14 @@ import {
   GitMerge,
   RefreshCw,
   X,
+  FolderPlus,
 } from 'lucide-react';
 
 interface PRCardProps {
   prWithGates: PRWithGates;
   onTriggerGate: (prWithGates: PRWithGates, gateResult: EvaluatedGateResult) => void;
   onMergePR?: (prWithGates: PRWithGates) => Promise<void> | void;
+  onOpenWorktree?: (prWithGates: PRWithGates) => Promise<void> | void;
   isSelected?: boolean;
   columnTheme?: 'blue' | 'purple';
   customId?: string;
@@ -38,6 +40,7 @@ export const PRCard: React.FC<PRCardProps> = ({
   prWithGates,
   onTriggerGate,
   onMergePR,
+  onOpenWorktree,
   isSelected,
   columnTheme = 'blue',
   customId,
@@ -53,6 +56,40 @@ export const PRCard: React.FC<PRCardProps> = ({
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
+
+  const [isSpawningWorktree, setIsSpawningWorktree] = useState(false);
+  const [worktreeError, setWorktreeError] = useState<string | null>(null);
+
+  const handleOpenWorktree = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (isSpawningWorktree) return;
+    setIsSpawningWorktree(true);
+    setWorktreeError(null);
+    try {
+      if (onOpenWorktree) {
+        await onOpenWorktree(prWithGates);
+      } else {
+        const res = await fetch('/api/worktree/spawn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repoFullName: pr.repo_full_name,
+            localPath: pr.local_path || '',
+            branchName: pr.head.ref,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || 'Failed to spawn worktree');
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Worktree error';
+      setWorktreeError(msg);
+    } finally {
+      setIsSpawningWorktree(false);
+    }
+  };
 
   const handleOpenMergeModal = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -387,7 +424,19 @@ export const PRCard: React.FC<PRCardProps> = ({
 
         <div className="flex items-center gap-2 flex-wrap">
           {passedGates.length === 0 ? (
-            <span className="text-xs text-gray-400 italic">No gate rules triggered for this PR state.</span>
+            <button
+              onClick={handleOpenWorktree}
+              disabled={isSpawningWorktree}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 hover:border-sky-300 transition-all disabled:opacity-50 cursor-pointer shadow-2xs"
+              title={`Open Git worktree for branch ${pr.head.ref} in Antigravity IDE terminal`}
+            >
+              {isSpawningWorktree ? (
+                <RefreshCw className="w-3.5 h-3.5 text-sky-600 animate-spin" />
+              ) : (
+                <FolderPlus className="w-3.5 h-3.5 text-sky-600" />
+              )}
+              <span>{isSpawningWorktree ? 'Opening Worktree...' : 'Worktree'}</span>
+            </button>
           ) : (
             passedGates.map((gate) => (
               <button
@@ -420,6 +469,12 @@ export const PRCard: React.FC<PRCardProps> = ({
               )}
               <span>{isMerging ? 'Merging...' : 'Merge'}</span>
             </button>
+          )}
+
+          {worktreeError && (
+            <span className="text-xs text-rose-600 font-medium" title={worktreeError}>
+              {worktreeError}
+            </span>
           )}
 
           {mergeError && (

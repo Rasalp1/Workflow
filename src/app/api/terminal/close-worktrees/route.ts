@@ -19,11 +19,13 @@ export async function POST(request: Request) {
       }
     });
 
-    // Check env vars as fallback
-    ['REPO_PATH_RASALP1_MEDSAMAPP', 'REPO_PATH_OSRA_1_MEDSAM_PRODUCTION'].forEach((envKey) => {
-      const p = process.env[envKey];
-      if (p && existsSync(p)) {
-        pathSet.add(p);
+    // Check env vars starting with REPO_PATH_ as fallback
+    Object.keys(process.env).forEach((envKey) => {
+      if (envKey.startsWith('REPO_PATH_')) {
+        const p = process.env[envKey];
+        if (p && existsSync(p)) {
+          pathSet.add(p);
+        }
       }
     });
 
@@ -36,17 +38,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Prefer MedSAMApp root directory for opening the terminal window
-    const medsamKey =
-      Object.keys(repoPathsMap).find((k) => k.toLowerCase().includes('medsamapp')) ||
-      'Rasalp1/MedSAMapp';
-
-    let targetPath = repoPathsMap[medsamKey] || process.env.REPO_PATH_RASALP1_MEDSAMAPP;
-
-    if (!targetPath || !existsSync(targetPath)) {
-      targetPath =
-        allRepoPaths.find((p) => p.toLowerCase().includes('medsamapp')) || allRepoPaths[0];
-    }
+    const targetPath = allRepoPaths[0];
 
     const result = await closeAllWorktreesInTerminal({
       targetRepoPath: targetPath,

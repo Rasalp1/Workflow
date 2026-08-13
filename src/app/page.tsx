@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Active In-Process Agents State
   const [activeAgentPRs, setActiveAgentPRs] = useState<Record<string, ActiveAgentInfo>>(() => {
@@ -150,21 +151,36 @@ export default function Dashboard() {
     };
   }, [fetchConfigAndRules, fetchPRs]);
 
-  // Filtered PR list — excluding bot accounts
-  const searchFilteredPRs = prsWithGates.filter(({ pr }) => {
-    const isBot =
-      pr.user?.login === 'github-actions[bot]' ||
-      pr.user?.login?.toLowerCase().includes('github-actions');
-    return !isBot;
-  });
+  // Filtered PR list — excluding bot accounts & matching searchQuery
+  const searchFilteredPRs = React.useMemo(() => {
+    return prsWithGates.filter(({ pr }) => {
+      const isBot =
+        pr.user?.login === 'github-actions[bot]' ||
+        pr.user?.login?.toLowerCase().includes('github-actions');
+      if (isBot) return false;
+
+      if (!searchQuery.trim()) return true;
+
+      const q = searchQuery.toLowerCase().trim();
+      const titleMatches = pr.title.toLowerCase().includes(q);
+      const numberMatches = `#${pr.number}`.includes(q) || pr.number.toString().includes(q);
+      const authorMatches = pr.user?.login?.toLowerCase().includes(q);
+      const branchMatches = pr.head?.ref?.toLowerCase().includes(q);
+      const repoMatches = pr.repo_full_name?.toLowerCase().includes(q) || pr.repo_name?.toLowerCase().includes(q);
+
+      return titleMatches || numberMatches || authorMatches || branchMatches || repoMatches;
+    });
+  }, [prsWithGates, searchQuery]);
 
   // Sort PRs:
-  // 1. Top: PRs where user (Rasalp1) does NOT have the latest comment/description
-  // 2. Bottom: PRs where user (Rasalp1) HAS the latest comment/description
+  // 1. Top: PRs where current user does NOT have the latest comment/description
+  // 2. Bottom: PRs where current user HAS the latest comment/description
   // 3. Secondary sort: PR number descending
   const sortedPRs = React.useMemo(() => {
     return [...searchFilteredPRs].sort((a, b) => {
-      const targetUser = (currentUser || 'Rasalp1').toLowerCase();
+      const targetUser = (currentUser || '').toLowerCase();
+      if (!targetUser) return b.pr.number - a.pr.number;
+
       const aLastUser = (a.pr.last_comment?.user?.login || a.pr.user.login).toLowerCase();
       const bLastUser = (b.pr.last_comment?.user?.login || b.pr.user.login).toLowerCase();
 
@@ -482,6 +498,31 @@ export default function Dashboard() {
     }
   };
 
+  const handleOpenWorktree = async (prWithGates: PRWithGates) => {
+    try {
+      setActionBanner({ type: 'info', message: `Opening Git worktree for branch "${prWithGates.pr.head.ref}" in Antigravity IDE...` });
+      const res = await fetch('/api/worktree/spawn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoFullName: prWithGates.pr.repo_full_name,
+          localPath: prWithGates.pr.local_path || '',
+          branchName: prWithGates.pr.head.ref,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to spawn worktree');
+      }
+      setActionBanner({ type: 'success', message: data.message || `Worktree opened for branch "${prWithGates.pr.head.ref}"!` });
+      setTimeout(() => setActionBanner(null), 5000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to spawn worktree';
+      setActionBanner({ type: 'error', message: msg });
+      throw err;
+    }
+  };
+
   const handleConfirmCloseAllWorktrees = async () => {
     setIsClosingWorktrees(true);
     setCloseWorktreesError(null);
@@ -509,7 +550,7 @@ export default function Dashboard() {
   };
 
   // Count & List PRs awaiting our comment or action (including user-owned PRs with merge conflicts)
-  const targetUser = currentUser || 'Rasalp1';
+  const targetUser = currentUser || null;
   const prsAwaitingOurComment = searchFilteredPRs.filter(({ pr }) =>
     isPrAwaitingComment(pr, targetUser)
   );
@@ -566,6 +607,8 @@ export default function Dashboard() {
         onClearActiveAgent={handleClearActiveAgent}
         onClearAllActiveAgents={handleClearAllActiveAgents}
         onSelectPR={handleSelectPR}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
 
       {/* Main Container - Fills Remaining Screen Height */}
@@ -626,16 +669,29 @@ export default function Dashboard() {
           /* Empty State */
           <div className="py-20 text-center panel rounded-xl p-12 space-y-3 my-auto">
             <GitPullRequest className="w-10 h-10 text-gray-300 mx-auto" />
-            <h3 className="text-base font-semibold text-gray-700">No Open Pull Requests Found</h3>
+            <h3 className="text-base font-semibold text-gray-700">
+              {searchQuery ? 'No Matching Pull Requests' : 'No Open Pull Requests Found'}
+            </h3>
             <p className="text-xs text-gray-400 max-w-md mx-auto">
-              There are currently no open PRs matching your filter across monitored repositories.
+              {searchQuery
+                ? `No PRs matching "${searchQuery}" across monitored repositories.`
+                : 'There are currently no open PRs matching your filter across monitored repositories.'}
             </p>
-            <button
-              onClick={fetchPRs}
-              className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium border border-gray-200 transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" /> Refresh
-            </button>
+            {searchQuery ? (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold border border-blue-200 transition-colors"
+              >
+                Clear Search
+              </button>
+            ) : (
+              <button
+                onClick={fetchPRs}
+                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium border border-gray-200 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              </button>
+            )}
           </div>
         ) : (
           /* Sidebar + 2-Column Independent Scrolling Layout */
@@ -700,6 +756,7 @@ export default function Dashboard() {
                           onClearActiveAgent={handleClearActiveAgent}
                           onTriggerGate={handleTriggerGate}
                           onMergePR={handleMergePR}
+                          onOpenWorktree={handleOpenWorktree}
                         />
                       );
                     })
@@ -756,6 +813,7 @@ export default function Dashboard() {
                           onClearActiveAgent={handleClearActiveAgent}
                           onTriggerGate={handleTriggerGate}
                           onMergePR={handleMergePR}
+                          onOpenWorktree={handleOpenWorktree}
                         />
                       );
                     })
@@ -784,6 +842,7 @@ export default function Dashboard() {
         onClose={() => setIsRulesModalOpen(false)}
         rules={rules}
         onSaveRules={handleSaveRules}
+        currentUser={currentUser}
       />
 
       {/* Settings Modal */}
