@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AppConfig } from '@/types';
-import { X, Save, Key, GitBranch, Folder, ShieldCheck, Zap } from 'lucide-react';
+import { AgentType, AppConfig } from '@/types';
+import { X, Save, Key, GitBranch, Folder, ShieldCheck, Zap, Terminal, Cpu } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -21,6 +21,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [githubToken, setGithubToken] = useState('');
   const [monitoredReposStr, setMonitoredReposStr] = useState('');
   const [repoPaths, setRepoPaths] = useState<Record<string, string>>({});
+  const [defaultAgent, setDefaultAgent] = useState<AgentType>('codex');
   const [directAgentSpawn, setDirectAgentSpawn] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -29,6 +30,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setGithubToken(config.maskedToken || config.githubToken || '');
     setMonitoredReposStr((config.monitoredRepos || []).join(', '));
     setRepoPaths(config.repoPaths || {});
+    setDefaultAgent(config.defaultAgent || 'codex');
     setDirectAgentSpawn(!!config.directAgentSpawn);
   }
 
@@ -53,6 +55,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         githubToken: githubToken.includes('...') ? config.githubToken : githubToken,
         monitoredRepos: repos,
         repoPaths,
+        defaultAgent,
         directAgentSpawn,
       });
 
@@ -121,6 +124,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onChange={(e) => setMonitoredReposStr(e.target.value)}
               className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-mono text-gray-800 focus:outline-none focus:border-purple-400 focus:bg-white transition-colors"
             />
+          </div>
+
+          {/* Default Agent CLI Model Selector */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+              <Terminal className="w-3.5 h-3.5 text-blue-500" /> Default AI Agent CLI Model:
+            </label>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDefaultAgent('codex')}
+                className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border text-xs font-medium transition-all ${
+                  defaultAgent === 'codex'
+                    ? 'bg-blue-50/80 border-blue-300 text-blue-800 font-semibold shadow-2xs ring-1 ring-blue-400/30'
+                    : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <Terminal className="w-4 h-4 text-blue-600" />
+                <span>codex</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDefaultAgent('claude')}
+                className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border text-xs font-medium transition-all ${
+                  defaultAgent === 'claude'
+                    ? 'bg-purple-50/80 border-purple-300 text-purple-800 font-semibold shadow-2xs ring-1 ring-purple-400/30'
+                    : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <Cpu className="w-4 h-4 text-purple-600" />
+                <span>claude code</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-400">
+              Select the default CLI agent model executable dispatched when reviewing PRs or spawning worktrees.
+            </p>
           </div>
 
           {/* Direct Agent Spawning Toggle */}

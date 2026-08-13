@@ -19,7 +19,16 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   // Active In-Process Agents State
-  const [activeAgentPRs, setActiveAgentPRs] = useState<Record<string, ActiveAgentInfo>>({});
+  const [activeAgentPRs, setActiveAgentPRs] = useState<Record<string, ActiveAgentInfo>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const saved = localStorage.getItem('workflow_active_agent_prs');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.error('Failed to load active agent state from localStorage:', e);
+      return {};
+    }
+  });
 
   // Dual Active Column PR States & Refs
   const [activeCol1PRId, setActiveCol1PRId] = useState<string | null>(null);
@@ -30,9 +39,6 @@ export default function Dashboard() {
   // Column Repositories State
   const [col1Repo, setCol1Repo] = useState<string>('');
   const [col2Repo, setCol2Repo] = useState<string>('');
-
-  // Settings State
-  const [defaultAgent, setDefaultAgent] = useState<AgentType>('codex');
 
   // Modals
   const [activeGateTrigger, setActiveGateTrigger] = useState<{
@@ -46,18 +52,6 @@ export default function Dashboard() {
   const [closeWorktreesError, setCloseWorktreesError] = useState<string | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [rules, setRules] = useState<LogicalGateRule[]>([]);
-
-  // Load persisted active agents state on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('workflow_active_agent_prs');
-      if (saved) {
-        setActiveAgentPRs(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.error('Failed to load active agent state from localStorage:', e);
-    }
-  }, []);
 
   const handleClearActiveAgent = (cardId: string) => {
     const cardKey = cardId.replace(/^(col1-|col2-)/, '');
@@ -132,7 +126,6 @@ export default function Dashboard() {
 
       if (configData.config) {
         setConfig(configData.config);
-        setDefaultAgent(configData.config.defaultAgent || 'codex');
       }
       if (rulesData.rules) {
         setRules(rulesData.rules);
@@ -360,19 +353,6 @@ export default function Dashboard() {
     fetchPRs();
   };
 
-  const handleChangeDefaultAgent = async (agent: AgentType) => {
-    setDefaultAgent(agent);
-    if (config) {
-      const updated = { ...config, defaultAgent: agent };
-      setConfig(updated);
-      await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
-      });
-    }
-  };
-
   const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
   const handleConfirmSpawn = async (payload: {
@@ -557,8 +537,6 @@ export default function Dashboard() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenRules={() => setIsRulesModalOpen(true)}
         onOpenCloseWorktreesModal={() => setIsCloseWorktreesModalOpen(true)}
-        defaultAgent={defaultAgent}
-        onChangeAgent={handleChangeDefaultAgent}
         currentUser={currentUser}
         prCount={searchFilteredPRs.length}
         awaitingCommentCount={prsWithoutOurLatestComment.length}
