@@ -14,8 +14,9 @@ interface HeaderProps {
   currentUser: string | null;
   prCount: number;
   awaitingCommentCount: number;
-  awaitingCommentItems: { repoName: string; prs: { number: number; title: string; cardId: string; branchName?: string }[] }[];
+  awaitingCommentItems: { repoName: string; prs: { number: number; title: string; cardId: string; branchName?: string; hasMergeConflicts?: boolean }[] }[];
   theirsToHandleCount: number;
+  theirsToHandleItems?: { repoName: string; prs: { number: number; title: string; cardId: string; branchName?: string; hasMergeConflicts?: boolean }[] }[];
   activeAgentPRs?: Record<string, ActiveAgentInfo>;
   onClearActiveAgent?: (cardId: string) => void;
   onClearAllActiveAgents?: () => void;
@@ -33,6 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
   awaitingCommentCount,
   awaitingCommentItems,
   theirsToHandleCount,
+  theirsToHandleItems = [],
   activeAgentPRs = {},
   onClearAllActiveAgents,
   onSelectPR,
@@ -47,25 +49,18 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-3 shrink-0">
           <div className="relative p-2 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-700/60 shadow-sm text-white flex items-center justify-center">
             <GitPullRequest className="w-5 h-5 text-sky-400" />
-            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500"></span>
-            </span>
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-gray-900 tracking-tight flex items-center gap-1.5">
+              <h1 className="text-base font-bold text-gray-900 tracking-tight flex items-center gap-1.5 leading-none">
                 <span>Workflow</span>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700">
-                  Agent Hub
-                </span>
               </h1>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-medium">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-medium inline-flex items-center leading-none">
                 {prCount} Active PRs
               </span>
               {activeAgentCount > 0 && (
-                <span className="text-xs pl-2 pr-1 py-0.5 rounded-full bg-blue-100 border border-blue-300 text-blue-800 font-semibold flex items-center gap-1.5">
-                  <RefreshCw className="w-3 h-3 text-blue-600 animate-spin" />
+                <span className="text-xs pl-2 pr-1 py-0.5 rounded-full bg-blue-100 border border-blue-300 text-blue-800 font-semibold inline-flex items-center gap-1.5 leading-none">
+                  <RefreshCw className="w-3 h-3 text-blue-600 animate-spin shrink-0" />
                   <span>{activeAgentCount} Agent{activeAgentCount > 1 ? 's' : ''} Working</span>
                   {onClearAllActiveAgents && (
                     <button
@@ -84,34 +79,104 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-500 flex items-center gap-1.5 mt-0.5">
-              <span>Logical Gates</span> • <span>Antigravity IDE CLI Spawns</span>
-              {currentUser && (
-                <span className="text-gray-700 font-medium flex items-center gap-1 ml-1">
+            {currentUser && (
+              <p className="text-xs text-gray-500 flex items-center gap-1.5 mt-0.5">
+                <span className="text-gray-700 font-medium flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> @{currentUser}
                 </span>
-              )}
-            </p>
+              </p>
+            )}
           </div>
         </div>
 
         {/* Center: Stat Badges (Centered Horizontally) */}
         <div className="flex items-center justify-center gap-2 flex-wrap flex-1 my-1 lg:my-0">
-          {/* Theirs to Handle Stat */}
-          <div className="flex items-center gap-2 bg-white border border-gray-200 px-3 py-1.5 rounded-lg shadow-sm">
-            <div className="flex items-center gap-1.5">
-              <span className="text-lg font-bold text-gray-400 tracking-tight leading-none">
-                {theirsToHandleCount}
-              </span>
-              <div className="flex flex-col">
-                <span className="text-xs font-semibold text-gray-600 leading-tight">
-                  Theirs to Handle
+          {/* Theirs to Handle Stat with Hover Popover */}
+          <div className="relative group">
+            <div className="flex items-center gap-2 bg-white border border-gray-200 hover:border-gray-300 px-3 py-1.5 rounded-lg shadow-sm transition-all cursor-pointer">
+              <div className="flex items-center gap-1.5">
+                <span className="text-lg font-bold text-gray-400 tracking-tight leading-none">
+                  {theirsToHandleCount}
                 </span>
-                <span className="text-[10px] text-gray-400 leading-tight">
-                  Our comment is latest
-                </span>
+                <div className="flex flex-col">
+                  <span className="text-xs font-semibold text-gray-600 leading-tight">
+                    Theirs to Handle
+                  </span>
+                  <span className="text-[10px] text-gray-400 leading-tight">
+                    Our comment is latest
+                  </span>
+                </div>
               </div>
             </div>
+
+            {/* Hover Popover Menu */}
+            {theirsToHandleCount > 0 && theirsToHandleItems.length > 0 && (
+              <div className="absolute left-1/2 -translate-x-1/2 top-full pt-2 hidden group-hover:block z-50 w-80 sm:w-96">
+                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-xl space-y-3" style={{ boxShadow: '0 8px 24px -4px rgba(0,0,0,0.12)' }}>
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                    <span className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                      <GitPullRequest className="w-3.5 h-3.5 text-gray-400" />
+                      Theirs to Handle ({theirsToHandleCount})
+                    </span>
+                    <span className="text-[10px] text-gray-400">Click # to jump</span>
+                  </div>
+
+                  <div className="space-y-3 max-h-72 overflow-y-auto pr-0.5">
+                    {theirsToHandleItems.map(({ repoName, prs }) => (
+                      <div key={repoName} className="space-y-1.5">
+                        <div className="text-[11px] font-semibold text-blue-600 truncate border-b border-gray-100 pb-1 uppercase tracking-wider" title={repoName}>
+                          {repoName.split('/')[1] || repoName}
+                        </div>
+                        {prs.length === 0 ? (
+                          <div className="text-[11px] text-gray-400 italic py-1 px-1">None</div>
+                        ) : (
+                          <div className="space-y-1">
+                            {prs.map((pr) => {
+                              const isInProcess = Boolean(activeAgentPRs[pr.cardId]);
+                              const agentInfo = activeAgentPRs[pr.cardId];
+                              return (
+                                <button
+                                  key={pr.number}
+                                  onClick={() => onSelectPR(pr.cardId)}
+                                  className={`w-full text-left px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all flex items-center justify-between group/pr ${
+                                    isInProcess
+                                      ? 'bg-blue-50/80 border-blue-200 text-blue-900 font-semibold'
+                                      : 'bg-gray-50 hover:bg-blue-50 border-gray-200 hover:border-blue-200 text-gray-700'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 truncate">
+                                    <span className="text-blue-600 font-bold">#{pr.number}</span>
+                                    <span className="text-[10px] text-gray-600 group-hover/pr:text-gray-900 font-sans truncate max-w-[150px]" title={pr.branchName || pr.title}>
+                                      {pr.branchName || pr.title}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {pr.hasMergeConflicts && (
+                                      <span className="text-[9px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded shrink-0">
+                                        Conflict
+                                      </span>
+                                    )}
+                                    {isInProcess ? (
+                                      <span className="text-[10px] text-blue-700 bg-blue-100/80 border border-blue-200 px-2 py-0.5 rounded-md font-sans font-semibold flex items-center gap-1.5 shrink-0">
+                                        <RefreshCw className="w-3 h-3 text-blue-600 animate-spin" />
+                                        <span>{agentInfo?.agent || 'agent'}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400 group-hover/pr:text-blue-600 shrink-0">Jump →</span>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* PRs Awaiting Comment Stat with Hover Popover */}
@@ -177,14 +242,21 @@ export const Header: React.FC<HeaderProps> = ({
                                     </span>
                                   </div>
 
-                                  {isInProcess ? (
-                                    <span className="text-[10px] text-blue-700 bg-blue-100/80 border border-blue-200 px-2 py-0.5 rounded-md font-sans font-semibold flex items-center gap-1.5 shrink-0">
-                                      <RefreshCw className="w-3 h-3 text-blue-600 animate-spin" />
-                                      <span>{agentInfo?.agent || 'agent'}</span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] text-gray-400 group-hover/pr:text-blue-600 shrink-0">Jump →</span>
-                                  )}
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {pr.hasMergeConflicts && (
+                                      <span className="text-[9px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded shrink-0">
+                                        Conflict
+                                      </span>
+                                    )}
+                                    {isInProcess ? (
+                                      <span className="text-[10px] text-blue-700 bg-blue-100/80 border border-blue-200 px-2 py-0.5 rounded-md font-sans font-semibold flex items-center gap-1.5 shrink-0">
+                                        <RefreshCw className="w-3 h-3 text-blue-600 animate-spin" />
+                                        <span>{agentInfo?.agent || 'agent'}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400 group-hover/pr:text-blue-600 shrink-0">Jump →</span>
+                                    )}
+                                  </div>
                                 </button>
                               );
                             })}

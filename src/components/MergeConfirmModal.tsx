@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PullRequest } from '@/types';
 import { GitMerge, X, AlertCircle, RefreshCw, GitBranch } from 'lucide-react';
 
@@ -21,16 +22,39 @@ export const MergeConfirmModal: React.FC<MergeConfirmModalProps> = ({
   isMerging,
   error,
 }) => {
-  if (!isOpen || !pr) return null;
+  const [mounted, setMounted] = useState(false);
 
-  return (
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isMerging) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isMerging, onClose]);
+
+  if (!isOpen || !pr || !mounted) return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-150"
       onClick={(e) => {
+        e.stopPropagation();
         if (e.target === e.currentTarget && !isMerging) onClose();
       }}
     >
-      <div className="bg-white rounded-xl w-full max-w-md border border-gray-200 shadow-2xl overflow-hidden flex flex-col transition-all">
+      <div
+        className="bg-white rounded-xl w-full max-w-md border border-gray-200 shadow-2xl overflow-hidden flex flex-col transition-all"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-emerald-50/50">
           <div className="flex items-center gap-3">
@@ -113,6 +137,8 @@ export const MergeConfirmModal: React.FC<MergeConfirmModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
+

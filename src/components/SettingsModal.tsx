@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AgentType, AppConfig } from '@/types';
 import { X, Save, Key, GitBranch, Folder, ShieldCheck, Zap, Terminal, Cpu } from 'lucide-react';
 
@@ -17,6 +18,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   config,
   onSaveConfig,
 }) => {
+  const [mounted, setMounted] = useState(false);
   const [prevConfig, setPrevConfig] = useState<AppConfig | null>(null);
   const [githubToken, setGithubToken] = useState('');
   const [monitoredReposStr, setMonitoredReposStr] = useState('');
@@ -24,6 +26,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [defaultAgent, setDefaultAgent] = useState<AgentType>('codex');
   const [directAgentSpawn, setDirectAgentSpawn] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSaving) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSaving, onClose]);
 
   if (config && config !== prevConfig) {
     setPrevConfig(config);
@@ -34,7 +53,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setDirectAgentSpawn(!!config.directAgentSpawn);
   }
 
-  if (!isOpen || !config) return null;
+  if (!isOpen || !config || !mounted) return null;
 
   const handlePathChange = (repo: string, path: string) => {
     setRepoPaths((prev) => ({
@@ -72,9 +91,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     .map((r) => r.trim())
     .filter(Boolean);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-      <div className="panel-raised rounded-xl w-full max-w-2xl border border-gray-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget && !isSaving) onClose();
+      }}
+    >
+      <div
+        className="panel-raised rounded-xl w-full max-w-2xl border border-gray-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
           <div className="flex items-center gap-3">
@@ -157,46 +185,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span>claude code</span>
               </button>
             </div>
-            <p className="text-[11px] text-gray-400">
-              Select the default CLI agent model executable dispatched when reviewing PRs or spawning worktrees.
-            </p>
           </div>
 
-          {/* Direct Agent Spawning Toggle */}
-          <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border border-blue-100 flex items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-1.5 font-semibold text-xs text-gray-900">
-                <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-                <span>Direct AI Agent Launching</span>
-              </div>
-              <p className="text-[11px] text-gray-500 leading-relaxed">
-                Skip prompt confirmation modal and immediately launch the AI agent in Antigravity IDE when clicking action buttons.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              role="switch"
-              aria-checked={directAgentSpawn}
-              onClick={() => setDirectAgentSpawn(!directAgentSpawn)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                directAgentSpawn ? 'bg-blue-600' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  directAgentSpawn ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Local Folder Mappings */}
-          <div className="space-y-3 pt-3 border-t border-gray-100">
+          {/* Monitored Repositories List */}
+          <div className="space-y-1.5">
             <label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
-              <Folder className="w-3.5 h-3.5 text-blue-500" /> Local Directory Path Mappings:
+              <GitBranch className="w-3.5 h-3.5 text-blue-500" /> Monitored Repositories (Comma Separated):
             </label>
-            <p className="text-[11px] text-gray-500">
+            <input
+              type="text"
+              placeholder="owner/repo1, owner/repo2"
+              value={monitoredReposStr}
+              onChange={(e) => setMonitoredReposStr(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs font-mono text-gray-800 focus:outline-none focus:border-blue-400 focus:bg-white transition-colors"
+            />
+          </div>
+
+          {/* Local Repository Path Mappings */}
+          <div className="space-y-2 pt-2 border-t border-gray-100">
+            <label className="text-xs font-semibold text-gray-800 flex items-center gap-1.5">
+              <Folder className="w-3.5 h-3.5 text-blue-500" /> Local Repository Paths (for CLI execution):
+            </label>
+            <p className="text-[11px] text-gray-400">
               Specify the local absolute disk folder path for each repo where `codex` / `claude` CLI will run:
             </p>
 
@@ -236,6 +246,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

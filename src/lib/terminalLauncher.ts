@@ -260,25 +260,58 @@ export async function closeAllWorktreesInTerminal({
     const cleanTarget = targetRepoPath.replace(/\/$/, '');
     const cleanRepoPaths = Array.from(new Set(repoPaths.map((p) => p.replace(/\/$/, ''))));
 
-    const repoListStr = cleanRepoPaths.map((p) => `"${p}"`).join(' ');
-    const cliCommand = `for repo in ${repoListStr}; do echo "=== Closing worktrees for $repo ===" && git -C "$repo" worktree list --porcelain | grep '^worktree ' | cut -d' ' -f2- | tail -n +2 | while read -r wt; do echo "Removing worktree: $wt" && git -C "$repo" worktree remove --force "$wt"; done && git -C "$repo" worktree prune; done; echo "=== All worktrees closed successfully ==="`;
+    let totalRemoved = 0;
 
-    await openTerminalInAntigravity({
-      cleanRepoPath: cleanTarget,
-      targetDir: cleanTarget,
-      cliCommand,
-    });
+    for (const repo of cleanRepoPaths) {
+      try {
+        const { stdout: listOut } = await execAsync(`git -C "${repo}" worktree list --porcelain`).catch(() => ({ stdout: '' }));
+        const lines = listOut.split('\n');
+        const worktreePaths = lines
+          .filter((line) => line.startsWith('worktree '))
+          .map((line) => line.substring(9).trim());
+
+        // Index 0 is the main repo root, skip it
+        for (let i = 1; i < worktreePaths.length; i++) {
+          const wt = worktreePaths[i];
+          if (!wt) continue;
+          try {
+            await execAsync(`git -C "${repo}" worktree remove --force "${wt}"`);
+          } catch (removeErr) {
+            if (existsSync(wt)) {
+              await execAsync(`rm -rf "${wt}"`).catch(() => {});
+            }
+          }
+          totalRemoved++;
+        }
+
+        await execAsync(`git -C "${repo}" worktree prune`).catch(() => {});
+      } catch (repoErr) {
+        console.error(`Error removing worktrees for repo ${repo}:`, repoErr);
+      }
+    }
+
+    const cliCommand = `echo "=== Worktree Cleanup Complete: ${totalRemoved} worktree(s) removed across ${cleanRepoPaths.length} repo(s) ==="`;
+
+    try {
+      await openTerminalInAntigravity({
+        cleanRepoPath: cleanTarget,
+        targetDir: cleanTarget,
+        cliCommand,
+      });
+    } catch (termErr) {
+      console.warn('Could not open notice in Antigravity terminal:', termErr);
+    }
 
     return {
       success: true,
-      message: `Opened terminal in ${cleanTarget} and executed commands to close all worktrees for ${cleanRepoPaths.length} repo(s)`,
+      message: `Successfully closed and removed ${totalRemoved} worktree(s) across ${cleanRepoPaths.length} repo(s).`,
     };
   } catch (error: unknown) {
-    console.error('Failed to close worktrees in terminal:', error);
+    console.error('Failed to close worktrees:', error);
     const msg = error instanceof Error ? error.message : String(error);
     return {
       success: false,
-      message: `Failed to close worktrees in terminal: ${msg}`,
+      message: `Failed to close worktrees: ${msg}`,
     };
   }
 }
