@@ -139,3 +139,19 @@ export function formatPromptTemplate(template: string, pr: PullRequest): string 
     .replace(/{last_comment_body}/g, lastCommentBody)
     .replace(/{comments_summary}/g, commentsSummary || 'No comments');
 }
+
+export function isPrAwaitingComment(
+  pr: PullRequest,
+  currentUserLogin: string | null
+): boolean {
+  if (!currentUserLogin) return true;
+
+  const effectiveUser = currentUserLogin.toLowerCase();
+  const isOwner = pr.user.login.toLowerCase() === effectiveUser;
+  const lastUser = (pr.last_comment?.user.login ?? pr.user.login).toLowerCase();
+  const notOurLatestComment = lastUser !== effectiveUser;
+  const userOwnedWithConflict = isOwner && Boolean(pr.has_merge_conflicts);
+
+  return notOurLatestComment || userOwnedWithConflict;
+}
+

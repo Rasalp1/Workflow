@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, X } from 'lucide-react';
 
 interface ClearAgentsModalProps {
@@ -16,16 +17,39 @@ export const ClearAgentsModal: React.FC<ClearAgentsModalProps> = ({
   onConfirm,
   activeCount,
 }) => {
-  if (!isOpen) return null;
+  const [mounted, setMounted] = useState(false);
 
-  return (
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !mounted) return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-150"
       onClick={(e) => {
+        e.stopPropagation();
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white rounded-xl w-full max-w-md border border-gray-200 shadow-2xl overflow-hidden flex flex-col transition-all">
+      <div
+        className="bg-white rounded-xl w-full max-w-md border border-gray-200 shadow-2xl overflow-hidden flex flex-col transition-all"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-amber-50/50">
           <div className="flex items-center gap-3">
@@ -82,6 +106,8 @@ export const ClearAgentsModal: React.FC<ClearAgentsModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
+

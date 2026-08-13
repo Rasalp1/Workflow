@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { LogicalGateRule } from '@/types';
 import { X, Save, Plus, Trash2, Sliders, CheckSquare, Square, Code } from 'lucide-react';
 
@@ -17,10 +18,28 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
   rules,
   onSaveRules,
 }) => {
+  const [mounted, setMounted] = useState(false);
   const [prevRules, setPrevRules] = useState<LogicalGateRule[] | null>(null);
   const [editableRules, setEditableRules] = useState<LogicalGateRule[]>([]);
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSaving) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSaving, onClose]);
 
   if (rules && rules !== prevRules) {
     setPrevRules(rules);
@@ -31,7 +50,7 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
     }
   }
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const currentRule = editableRules.find((r) => r.id === selectedRuleId) || editableRules[0];
 
@@ -104,9 +123,18 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-      <div className="panel-raised rounded-xl w-full max-w-4xl border border-gray-200 shadow-2xl overflow-hidden flex flex-col h-[85vh]">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget && !isSaving) onClose();
+      }}
+    >
+      <div
+        className="panel-raised rounded-xl w-full max-w-4xl border border-gray-200 shadow-2xl overflow-hidden flex flex-col h-[85vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
           <div className="flex items-center gap-3">
@@ -350,6 +378,7 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

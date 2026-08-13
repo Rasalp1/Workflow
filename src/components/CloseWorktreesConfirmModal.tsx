@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FolderX, X, AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface CloseWorktreesConfirmModalProps {
@@ -18,16 +19,39 @@ export const CloseWorktreesConfirmModal: React.FC<CloseWorktreesConfirmModalProp
   isClosing,
   error,
 }) => {
-  if (!isOpen) return null;
+  const [mounted, setMounted] = useState(false);
 
-  return (
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isClosing) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isClosing, onClose]);
+
+  if (!isOpen || !mounted) return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-150"
       onClick={(e) => {
+        e.stopPropagation();
         if (e.target === e.currentTarget && !isClosing) onClose();
       }}
     >
-      <div className="bg-white rounded-xl w-full max-w-md border border-gray-200 shadow-2xl overflow-hidden flex flex-col transition-all">
+      <div
+        className="bg-white rounded-xl w-full max-w-md border border-gray-200 shadow-2xl overflow-hidden flex flex-col transition-all"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-rose-50/50">
           <div className="flex items-center gap-3">
@@ -101,6 +125,8 @@ export const CloseWorktreesConfirmModal: React.FC<CloseWorktreesConfirmModalProp
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
+

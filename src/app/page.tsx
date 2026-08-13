@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { ActiveAgentInfo, AgentType, AppConfig, EvaluatedGateResult, LogicalGateRule, PRWithGates } from '@/types';
+import { isPrAwaitingComment } from '@/lib/logicGates';
 import { Header } from '@/components/Header';
 import { PRCard } from '@/components/PRCard';
 import { PRSidebar } from '@/components/PRSidebar';
@@ -102,7 +103,7 @@ export default function Dashboard() {
           setCol2Repo((prev) => {
             const c1 = col1Repo || defaultCol1;
             if (prev && repos.includes(prev) && prev !== c1) return prev;
-            return defaultCol2 !== c1 ? defaultCol2 : 'ALL';
+            return defaultCol2 !== c1 ? defaultCol2 : defaultCol1;
           });
         }
       }
@@ -181,13 +182,13 @@ export default function Dashboard() {
   // Filter PRs for Column 1 & Column 2
   const col1PRs = React.useMemo(() => {
     return sortedPRs.filter(
-      ({ pr }) => col1Repo === 'ALL' || pr.repo_full_name === col1Repo
+      ({ pr }) => pr.repo_full_name === col1Repo
     );
   }, [sortedPRs, col1Repo]);
 
   const col2PRs = React.useMemo(() => {
     return sortedPRs.filter(
-      ({ pr }) => col2Repo === 'ALL' || pr.repo_full_name === col2Repo
+      ({ pr }) => pr.repo_full_name === col2Repo
     );
   }, [sortedPRs, col2Repo]);
 
@@ -287,7 +288,7 @@ export default function Dashboard() {
     if (!inCol1 && !inCol2) {
       setCol2Repo(repoName);
       if (col1Repo === repoName) {
-        const alt = monitoredRepos.find((r) => r !== repoName) || 'ALL';
+        const alt = monitoredRepos.find((r) => r !== repoName) || monitoredRepos[0] || repoName;
         setCol1Repo(col2Repo && col2Repo !== repoName ? col2Repo : alt);
       }
       setActiveCol2PRId(cardId);
@@ -320,7 +321,7 @@ export default function Dashboard() {
   const handleCol1RepoChange = (newRepo: string) => {
     setCol1Repo(newRepo);
     if (newRepo === col2Repo) {
-      const alt = monitoredRepos.find((r) => r !== newRepo) || 'ALL';
+      const alt = monitoredRepos.find((r) => r !== newRepo) || monitoredRepos[0] || newRepo;
       setCol2Repo(col1Repo && col1Repo !== newRepo ? col1Repo : alt);
     }
   };
@@ -328,7 +329,7 @@ export default function Dashboard() {
   const handleCol2RepoChange = (newRepo: string) => {
     setCol2Repo(newRepo);
     if (newRepo === col1Repo) {
-      const alt = monitoredRepos.find((r) => r !== newRepo) || 'ALL';
+      const alt = monitoredRepos.find((r) => r !== newRepo) || monitoredRepos[0] || newRepo;
       setCol1Repo(col2Repo && col2Repo !== newRepo ? col2Repo : alt);
     }
   };
@@ -507,16 +508,19 @@ export default function Dashboard() {
     }
   };
 
-  // Count & List PRs where target user (currentUser or Rasalp1) does NOT have the latest comment or description
-  const targetUser = (currentUser || 'Rasalp1').toLowerCase();
-  const prsWithoutOurLatestComment = searchFilteredPRs.filter(({ pr }) => {
-    const lastUser = (pr.last_comment?.user?.login || pr.user.login).toLowerCase();
-    return lastUser !== targetUser;
-  });
+  // Count & List PRs awaiting our comment or action (including user-owned PRs with merge conflicts)
+  const targetUser = currentUser || 'Rasalp1';
+  const prsAwaitingOurComment = searchFilteredPRs.filter(({ pr }) =>
+    isPrAwaitingComment(pr, targetUser)
+  );
 
-  // Build awaiting-comment items for Header popover
-  const awaitingReposMap: Record<string, { number: number; title: string; branchName: string; cardId: string }[]> = {};
-  prsWithoutOurLatestComment.forEach(({ pr }) => {
+  // Build awaiting-comment & theirs-to-handle items for Header popover
+  const theirsToHandlePRs = searchFilteredPRs.filter(({ pr }) =>
+    !isPrAwaitingComment(pr, targetUser)
+  );
+
+  const awaitingReposMap: Record<string, { number: number; title: string; branchName: string; cardId: string; hasMergeConflicts: boolean }[]> = {};
+  prsAwaitingOurComment.forEach(({ pr }) => {
     const key = pr.repo_full_name;
     if (!awaitingReposMap[key]) awaitingReposMap[key] = [];
     awaitingReposMap[key].push({
@@ -524,9 +528,24 @@ export default function Dashboard() {
       title: pr.title,
       branchName: pr.head.ref,
       cardId: `pr-card-${pr.repo_full_name}-${pr.number}`,
+      hasMergeConflicts: Boolean(pr.has_merge_conflicts),
     });
   });
   const awaitingCommentItems = Object.entries(awaitingReposMap).map(([repoName, prs]) => ({ repoName, prs }));
+
+  const theirsReposMap: Record<string, { number: number; title: string; branchName: string; cardId: string; hasMergeConflicts: boolean }[]> = {};
+  theirsToHandlePRs.forEach(({ pr }) => {
+    const key = pr.repo_full_name;
+    if (!theirsReposMap[key]) theirsReposMap[key] = [];
+    theirsReposMap[key].push({
+      number: pr.number,
+      title: pr.title,
+      branchName: pr.head.ref,
+      cardId: `pr-card-${pr.repo_full_name}-${pr.number}`,
+      hasMergeConflicts: Boolean(pr.has_merge_conflicts),
+    });
+  });
+  const theirsToHandleItems = Object.entries(theirsReposMap).map(([repoName, prs]) => ({ repoName, prs }));
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 text-gray-900 overflow-hidden w-full">
@@ -539,9 +558,10 @@ export default function Dashboard() {
         onOpenCloseWorktreesModal={() => setIsCloseWorktreesModalOpen(true)}
         currentUser={currentUser}
         prCount={searchFilteredPRs.length}
-        awaitingCommentCount={prsWithoutOurLatestComment.length}
-        theirsToHandleCount={searchFilteredPRs.length - prsWithoutOurLatestComment.length}
+        awaitingCommentCount={prsAwaitingOurComment.length}
+        theirsToHandleCount={searchFilteredPRs.length - prsAwaitingOurComment.length}
         awaitingCommentItems={awaitingCommentItems}
+        theirsToHandleItems={theirsToHandleItems}
         activeAgentPRs={activeAgentPRs}
         onClearActiveAgent={handleClearActiveAgent}
         onClearAllActiveAgents={handleClearAllActiveAgents}
@@ -649,9 +669,6 @@ export default function Dashboard() {
                       onChange={(e) => handleCol1RepoChange(e.target.value)}
                       className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-blue-700 focus:outline-none focus:border-blue-400 cursor-pointer"
                     >
-                      <option value="ALL" disabled={col2Repo === 'ALL'}>
-                        All Repositories {col2Repo === 'ALL' ? '(Selected in Col 2)' : ''}
-                      </option>
                       {monitoredRepos.map((repo) => (
                         <option key={repo} value={repo} disabled={repo === col2Repo}>
                           {repo} {repo === col2Repo ? '(Selected in Col 2)' : ''}
@@ -708,9 +725,6 @@ export default function Dashboard() {
                       onChange={(e) => handleCol2RepoChange(e.target.value)}
                       className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-purple-700 focus:outline-none focus:border-purple-400 cursor-pointer"
                     >
-                      <option value="ALL" disabled={col1Repo === 'ALL'}>
-                        All Repositories {col1Repo === 'ALL' ? '(Selected in Col 1)' : ''}
-                      </option>
                       {monitoredRepos.map((repo) => (
                         <option key={repo} value={repo} disabled={repo === col1Repo}>
                           {repo} {repo === col1Repo ? '(Selected in Col 1)' : ''}

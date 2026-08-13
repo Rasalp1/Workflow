@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { evaluateGateRule, formatPromptTemplate } from '../logicGates.ts';
+import { evaluateGateRule, formatPromptTemplate, isPrAwaitingComment } from '../logicGates.ts';
 import type { LogicalGateRule, PullRequest } from '../../types/index.ts';
 
 describe('Logic Gates Evaluator', () => {
@@ -81,4 +81,47 @@ describe('Logic Gates Evaluator', () => {
     const formatted = formatPromptTemplate(template, dummyPR);
     assert.strictEqual(formatted, 'PR #42 by @alice on branch fix-auth in org/repo');
   });
+
+  describe('isPrAwaitingComment', () => {
+    it('returns true when last comment is by someone else', () => {
+      // dummyPR author is alice, last comment is by bob
+      assert.strictEqual(isPrAwaitingComment(dummyPR, 'alice'), true);
+    });
+
+    it('returns false when user owned PR has no conflicts and user is last commenter', () => {
+      const userLastPR: PullRequest = {
+        ...dummyPR,
+        last_comment: {
+          id: 2,
+          user: { login: 'alice', avatar_url: '', html_url: '' },
+          body: 'Done fixing!',
+          created_at: '2026-08-12T11:00:00Z',
+          updated_at: '2026-08-12T11:00:00Z',
+          html_url: '',
+          is_review_comment: false,
+        },
+        has_merge_conflicts: false,
+      };
+      assert.strictEqual(isPrAwaitingComment(userLastPR, 'alice'), false);
+    });
+
+    it('returns true when user owned PR has merge conflicts regardless of last commenter', () => {
+      const userLastConflictPR: PullRequest = {
+        ...dummyPR,
+        last_comment: {
+          id: 2,
+          user: { login: 'alice', avatar_url: '', html_url: '' },
+          body: 'Done fixing!',
+          created_at: '2026-08-12T11:00:00Z',
+          updated_at: '2026-08-12T11:00:00Z',
+          html_url: '',
+          is_review_comment: false,
+        },
+        has_merge_conflicts: true,
+      };
+      // Even though alice is the last commenter, because she owns it and it has conflicts, it requires attention!
+      assert.strictEqual(isPrAwaitingComment(userLastConflictPR, 'alice'), true);
+    });
+  });
 });
+
