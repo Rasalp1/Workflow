@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ActiveAgentInfo, AgentType } from '@/types';
-import { GitPullRequest, RefreshCw, Sliders, ShieldCheck, Key, MessageSquare, X, FolderX } from 'lucide-react';
+import { GitPullRequest, RefreshCw, Sliders, ShieldCheck, Key, MessageSquare, X, FolderX, Search } from 'lucide-react';
 import { ClearAgentsModal } from '@/components/ClearAgentsModal';
 
 interface HeaderProps {
@@ -21,6 +21,8 @@ interface HeaderProps {
   onClearActiveAgent?: (cardId: string) => void;
   onClearAllActiveAgents?: () => void;
   onSelectPR: (cardId: string) => void;
+  searchQuery?: string;
+  onSearchChange?: (query: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -38,6 +40,8 @@ export const Header: React.FC<HeaderProps> = ({
   activeAgentPRs = {},
   onClearAllActiveAgents,
   onSelectPR,
+  searchQuery = '',
+  onSearchChange,
 }) => {
   const activeAgentCount = Object.keys(activeAgentPRs).length;
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
@@ -194,7 +198,7 @@ export const Header: React.FC<HeaderProps> = ({
                     PRs Awaiting Our Comment
                   </span>
                   <span className="text-[10px] text-gray-400 leading-tight">
-                    Not by @{currentUser || 'Rasalp1'}
+                    Not by @{currentUser || 'you'}
                   </span>
                 </div>
               </div>
@@ -269,6 +273,31 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
           </div>
+
+          {/* Search Input Field */}
+          {onSearchChange && (
+            <div className="relative flex items-center ml-1">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Search PRs..."
+                className="pl-8 pr-7 py-1.5 text-xs bg-white border border-gray-200 hover:border-gray-300 rounded-lg shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-36 sm:w-44 lg:w-52 transition-all placeholder:text-gray-400 text-gray-800"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => onSearchChange('')}
+                  className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action Buttons Header (Right) */}

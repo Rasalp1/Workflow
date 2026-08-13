@@ -91,7 +91,7 @@ For each issue:
   {
     id: 'review-with-context',
     name: 'Review With Context',
-    description: 'PR owned by someone else with prior context from us and new comments.',
+    description: 'PR owned by someone else with new comments.',
     enabled: true,
     buttonLabel: 'Review with context',
     buttonIcon: 'Eye',
@@ -99,7 +99,6 @@ For each issue:
     actionType: 'spawn_agent',
     conditions: {
       prOwnedByNonCurrentUser: true,
-      hasCommentsByCurrentUser: true,
       lastCommentNotCurrentUser: true,
     },
     promptTemplate: `Look at the complete comment history on the pr that exists on this branch, PR #{pr_number}. We’re the reviewer. Has the author adressed all the issues we identified? Are there any new issues that have been created? Is the author pushing back on anything we’ve said in a previous review? Why? Do they do so rightfully, or are they just disobedient? Do a complete code review of this PR. Think long and hard to verify that the claimed fixes are in place, and try to find any new issues that have arisen, and try to find unrelated issues on this PR that were missed before! When you’ve completed your code review, publish a "changes requested" comment type on the PR with your detailed feedback.`,
@@ -165,17 +164,10 @@ export async function loadConfig(): Promise<AppConfig> {
     }
   });
 
-  if (process.env.REPO_PATH_PROJECT_PRODUCTION) {
-    envPaths['example-org/project-production'] = process.env.REPO_PATH_PROJECT_PRODUCTION;
-  }
-  if (process.env.REPO_PATH_PROJECT_APP) {
-    envPaths['example-org/project-app'] = process.env.REPO_PATH_PROJECT_APP;
-  }
-
   const defaultConfig: AppConfig = {
     githubToken: process.env.GITHUB_TOKEN || '',
     defaultAgent: (process.env.DEFAULT_AGENT as AgentType) || 'codex',
-    monitoredRepos: envRepos.length > 0 ? envRepos : ['example-org/project-production', 'example-org/project-app'],
+    monitoredRepos: envRepos,
     repoPaths: envPaths,
     directAgentSpawn: false,
   };
@@ -208,7 +200,15 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
       const fileContent = await fs.readFile(RULES_FILE, 'utf-8');
       const rules = JSON.parse(fileContent);
       if (Array.isArray(rules) && rules.length > 0) {
-        return rules;
+        // Migration: remove legacy hasCommentsByCurrentUser blocking condition from review-with-context rule if present
+        const cleanedRules = rules.map((r: LogicalGateRule) => {
+          if (r.id === 'review-with-context' && r.conditions) {
+            const { hasCommentsByCurrentUser, ...restConditions } = r.conditions;
+            return { ...r, conditions: restConditions };
+          }
+          return r;
+        });
+        return cleanedRules;
       }
     } catch (e) {
       console.error('Failed to parse rules file:', e);

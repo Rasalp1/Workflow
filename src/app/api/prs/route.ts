@@ -30,7 +30,7 @@ export async function GET() {
       try {
         const prs = await getRepoPullRequests(repoFullName, config.githubToken);
 
-        const mappedPath = config.repoPaths[repoFullName] || process.env[`REPO_PATH_${repoFullName.replace(/[^a-zA-Z0-0]/g, '_').toUpperCase()}`];
+        const mappedPath = config.repoPaths[repoFullName] || process.env[`REPO_PATH_${repoFullName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`];
 
         for (const pr of prs) {
           if (mappedPath) {

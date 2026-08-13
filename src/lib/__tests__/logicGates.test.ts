@@ -82,6 +82,26 @@ describe('Logic Gates Evaluator', () => {
     assert.strictEqual(formatted, 'PR #42 by @alice on branch fix-auth in org/repo');
   });
 
+  it('should pass review-with-context rule when PR owned by non-user and last comment is by non-user even without prior user comments', () => {
+    const reviewRule: LogicalGateRule = {
+      id: 'review-with-context',
+      name: 'Review With Context',
+      description: 'PR owned by someone else with new comments.',
+      enabled: true,
+      buttonLabel: 'Review with context',
+      actionType: 'spawn_agent',
+      conditions: {
+        prOwnedByNonCurrentUser: true,
+        lastCommentNotCurrentUser: true,
+      },
+      promptTemplate: 'Review PR #{pr_number}',
+    };
+
+    // dummyPR author is 'alice', last commenter is 'bob', currentUser is 'charlie'
+    const result = evaluateGateRule(reviewRule, dummyPR, 'charlie', 'codex');
+    assert.strictEqual(result.passed, true);
+  });
+
   describe('isPrAwaitingComment', () => {
     it('returns true when last comment is by someone else', () => {
       // dummyPR author is alice, last comment is by bob

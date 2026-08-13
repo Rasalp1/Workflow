@@ -19,11 +19,13 @@ export async function POST(request: Request) {
       }
     });
 
-    // Check env vars as fallback
-    ['REPO_PATH_PROJECT_APP', 'REPO_PATH_PROJECT_PRODUCTION'].forEach((envKey) => {
-      const p = process.env[envKey];
-      if (p && existsSync(p)) {
-        pathSet.add(p);
+    // Check env vars starting with REPO_PATH_ as fallback
+    Object.keys(process.env).forEach((envKey) => {
+      if (envKey.startsWith('REPO_PATH_')) {
+        const p = process.env[envKey];
+        if (p && existsSync(p)) {
+          pathSet.add(p);
+        }
       }
     });
 
@@ -36,17 +38,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Prefer ProjectApp root directory for opening the terminal window
-    const exampleprojectKey =
-      Object.keys(repoPathsMap).find((k) => k.toLowerCase().includes('projectapp')) ||
-      'example-org/project-app';
-
-    let targetPath = repoPathsMap[exampleprojectKey] || process.env.REPO_PATH_PROJECT_APP;
-
-    if (!targetPath || !existsSync(targetPath)) {
-      targetPath =
-        allRepoPaths.find((p) => p.toLowerCase().includes('projectapp')) || allRepoPaths[0];
-    }
+    const targetPath = allRepoPaths[0];
 
     const result = await closeAllWorktreesInTerminal({
       targetRepoPath: targetPath,
