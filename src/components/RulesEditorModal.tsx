@@ -336,6 +336,16 @@ export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
                     />
                     <span>CI/CD status checks are failing</span>
                   </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={!!currentRule.conditions.isDraft}
+                      onChange={(e) => handleUpdateConditions('isDraft', e.target.checked)}
+                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
+                    />
+                    <span>PR is currently a Draft (requires conversion before review)</span>
+                  </label>
                 </div>
               </div>
 

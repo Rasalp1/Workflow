@@ -98,12 +98,25 @@ export function evaluateGateRule(
     }
   }
 
-  // Condition 5: titleOrBodyKeyword
+  // Condition: titleOrBodyKeyword
   if (rule.conditions.titleOrBodyKeyword) {
     const keyword = rule.conditions.titleOrBodyKeyword.toLowerCase();
     const matchesTitle = pr.title.toLowerCase().includes(keyword);
     const matchesBody = pr.body.toLowerCase().includes(keyword);
     if (!matchesTitle && !matchesBody) {
+      passed = false;
+    }
+  }
+
+  // Condition: isDraft (Draft PR rule)
+  // If PR is a draft, only rules designed for draft PRs apply.
+  // If PR is not a draft, draft-specific rules do not apply.
+  if (pr.is_draft) {
+    if (!rule.conditions.isDraft) {
+      passed = false;
+    }
+  } else {
+    if (rule.conditions.isDraft) {
       passed = false;
     }
   }

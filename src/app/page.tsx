@@ -422,7 +422,29 @@ export default function Dashboard() {
 
   const handleTriggerGate = async (prWithGates: PRWithGates, gateResult: EvaluatedGateResult) => {
     if (config?.directAgentSpawn) {
-      if (gateResult.rule.actionType === 'post_comment') {
+      if (gateResult.rule.actionType === 'undraft_pr') {
+        try {
+          setActionBanner({ type: 'info', message: `Marking PR #${prWithGates.pr.number} as ready for review...` });
+          const res = await fetch('/api/prs/undraft', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              repoFullName: prWithGates.pr.repo_full_name,
+              prNumber: prWithGates.pr.number,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            throw new Error(data.error || 'Failed to mark PR as ready for review');
+          }
+          setActionBanner({ type: 'success', message: `PR #${prWithGates.pr.number} marked as ready for review!` });
+          fetchPRs();
+          setTimeout(() => setActionBanner(null), 5000);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Action failed';
+          setActionBanner({ type: 'error', message: msg });
+        }
+      } else if (gateResult.rule.actionType === 'post_comment') {
         try {
           setActionBanner({ type: 'info', message: `Posting GitHub comment on PR #${prWithGates.pr.number}...` });
           const res = await fetch('/api/prs/comment', {
@@ -829,7 +851,10 @@ export default function Dashboard() {
       {activeGateTrigger && (
         <PromptModal
           isOpen={!!activeGateTrigger}
-          onClose={() => setActiveGateTrigger(null)}
+          onClose={() => {
+            setActiveGateTrigger(null);
+            fetchPRs();
+          }}
           prWithGates={activeGateTrigger.prWithGates}
           gateResult={activeGateTrigger.gateResult}
           onConfirmSpawn={handleConfirmSpawn}
