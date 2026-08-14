@@ -121,6 +121,13 @@ export function evaluateGateRule(
     }
   }
 
+  // Condition: notReviewedByOthers (Exclude PRs where 2 other distinct users commented in a row)
+  if (rule.conditions.notReviewedByOthers) {
+    if (hasTwoConsecutiveCommentsByOthers(pr, currentUserLogin)) {
+      passed = false;
+    }
+  }
+
   const generatedPrompt = formatPromptTemplate(rule.promptTemplate, pr);
 
   return {
@@ -153,6 +160,49 @@ export function formatPromptTemplate(template: string, pr: PullRequest): string 
     .replace(/{comments_summary}/g, commentsSummary || 'No comments');
 }
 
+/**
+ * Checks if there are 2 comments in a row by 2 distinct users (neither of which is the current user)
+ * since the last comment made by the current user (or across all comments if the current user never commented).
+ * This indicates that the PR is actively being reviewed or discussed by other individuals.
+ */
+export function hasTwoConsecutiveCommentsByOthers(
+  pr: PullRequest,
+  currentUserLogin: string | null
+): boolean {
+  if (!currentUserLogin) return false;
+  const effectiveUser = currentUserLogin.toLowerCase();
+  const comments = pr.comments || [];
+  if (comments.length < 2) return false;
+
+  // Find the index of the last comment made by the current user
+  let lastUserCommentIndex = -1;
+  for (let i = comments.length - 1; i >= 0; i--) {
+    if (comments[i]?.user?.login?.toLowerCase() === effectiveUser) {
+      lastUserCommentIndex = i;
+      break;
+    }
+  }
+
+  // Only examine comments posted after our user's latest comment (or all comments if user never commented)
+  const commentsSinceUser = lastUserCommentIndex >= 0
+    ? comments.slice(lastUserCommentIndex + 1)
+    : comments;
+
+  if (commentsSinceUser.length < 2) return false;
+
+  // Check for any 2 adjacent comments made by 2 different users (neither being currentUser)
+  for (let i = 0; i < commentsSinceUser.length - 1; i++) {
+    const userA = commentsSinceUser[i]?.user?.login?.toLowerCase();
+    const userB = commentsSinceUser[i + 1]?.user?.login?.toLowerCase();
+
+    if (userA && userB && userA !== effectiveUser && userB !== effectiveUser && userA !== userB) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function isPrAwaitingComment(
   pr: PullRequest,
   currentUserLogin: string | null
@@ -165,6 +215,16 @@ export function isPrAwaitingComment(
   const notOurLatestComment = lastUser !== effectiveUser;
   const userOwnedWithConflict = isOwner && Boolean(pr.has_merge_conflicts);
 
-  return notOurLatestComment || userOwnedWithConflict;
+  if (userOwnedWithConflict) return true;
+  if (!notOurLatestComment) return false;
+
+  // On PRs not owned by the current user: if there have been two comments in a row
+  // by 2 other individual users that are NOT the current user, it has probably
+  // been reviewed by someone else, so it is not awaiting our comment.
+  if (!isOwner && hasTwoConsecutiveCommentsByOthers(pr, currentUserLogin)) {
+    return false;
+  }
+
+  return true;
 }
 

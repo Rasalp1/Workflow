@@ -86,6 +86,7 @@ export interface LogicalGateRule {
     checksFailing?: boolean;
     titleOrBodyKeyword?: string;
     isDraft?: boolean;
+    notReviewedByOthers?: boolean;
   };
   promptTemplate: string; // Dynamic template string or comment text
 }
