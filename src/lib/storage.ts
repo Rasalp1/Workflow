@@ -9,6 +9,20 @@ const RULES_FILE = path.join(DATA_DIR, 'rules.json');
 
 export const DEFAULT_RULES: LogicalGateRule[] = [
   {
+    id: 'convert-draft-to-ready',
+    name: 'Convert Draft to Open PR',
+    description: 'Converts a draft PR into a real open PR ready for review.',
+    enabled: true,
+    buttonLabel: 'Convert PR',
+    buttonIcon: 'GitPullRequest',
+    buttonColor: 'blue',
+    actionType: 'undraft_pr',
+    conditions: {
+      isDraft: true,
+    },
+    promptTemplate: 'Convert PR #{pr_number} ({pr_title}) from draft to open ready-for-review PR.',
+  },
+  {
     id: 'address-issues',
     name: 'Address Review Issues',
     description: 'PR owned by user with latest comment from someone else.',
@@ -200,14 +214,24 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
       const fileContent = await fs.readFile(RULES_FILE, 'utf-8');
       const rules = JSON.parse(fileContent);
       if (Array.isArray(rules) && rules.length > 0) {
+        // Migration: ensure all DEFAULT_RULES exist in rules
+        const existingIds = new Set(rules.map((r: LogicalGateRule) => r.id));
+        const missingDefaultRules = DEFAULT_RULES.filter((dr) => !existingIds.has(dr.id));
+        const mergedRules = [...missingDefaultRules, ...rules];
+
         // Migration: remove legacy hasCommentsByCurrentUser blocking condition from review-with-context rule if present
-        const cleanedRules = rules.map((r: LogicalGateRule) => {
+        const cleanedRules = mergedRules.map((r: LogicalGateRule) => {
           if (r.id === 'review-with-context' && r.conditions) {
             const { hasCommentsByCurrentUser, ...restConditions } = r.conditions;
             return { ...r, conditions: restConditions };
           }
           return r;
         });
+
+        if (missingDefaultRules.length > 0) {
+          await saveRules(cleanedRules);
+        }
+
         return cleanedRules;
       }
     } catch (e) {

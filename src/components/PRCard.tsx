@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { ActiveAgentInfo, EvaluatedGateResult, PRWithGates } from '@/types';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { MergeConfirmModal } from '@/components/MergeConfirmModal';
+import { checkRebaseStatus } from '@/lib/rebaseDetector';
 import {
   GitPullRequest,
   User,
@@ -18,6 +19,7 @@ import {
   FileCode,
   GitBranch,
   GitMerge,
+  GitCommit,
   RefreshCw,
   X,
   FolderPlus,
@@ -129,6 +131,8 @@ export const PRCard: React.FC<PRCardProps> = ({
 
   const getGateIcon = (iconName?: string) => {
     switch (iconName) {
+      case 'GitPullRequest':
+        return <GitPullRequest className="w-3.5 h-3.5" />;
       case 'Eye':
         return <Eye className="w-3.5 h-3.5" />;
       case 'Wrench':
@@ -228,6 +232,13 @@ export const PRCard: React.FC<PRCardProps> = ({
         {/* PR Status */}
         <div className="flex flex-col items-start md:items-end gap-2 shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Draft Status */}
+            {pr.is_draft && (
+              <span className="text-xs flex items-center gap-1 text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-300 font-medium">
+                <GitPullRequest className="w-3.5 h-3.5 text-gray-500" /> Draft PR
+              </span>
+            )}
+
             {/* Mergeability Status */}
             {!pr.has_merge_conflicts && pr.mergeable_state === 'behind' ? (
               <span
@@ -331,73 +342,146 @@ export const PRCard: React.FC<PRCardProps> = ({
           </div>
         ) : (
           <div className="space-y-3 w-full" id="comment-thread">
-            {pr.comments.map((comment) => (
-              <div
-                key={`${comment.id}-${comment.review_state || (comment.is_review_comment ? 'rev' : 'iss')}`}
-                className="w-full rounded-lg bg-white border border-gray-200 p-4 shadow-sm space-y-3 transition-colors hover:border-gray-300"
-              >
-                {/* Comment Author Header */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-gray-100 w-full">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {comment.user.avatar_url ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={comment.user.avatar_url}
-                        alt={comment.user.login}
-                        className="w-5 h-5 rounded-full border border-gray-200"
-                      />
-                    ) : (
-                      <User className="w-4 h-4 text-gray-400" />
-                    )}
-                    <a
-                      href={comment.user.html_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-semibold text-xs text-blue-700 hover:underline"
-                    >
-                      @{comment.user.login}
-                    </a>
+            {pr.comments.map((comment) => {
+              const rebaseStatus = checkRebaseStatus(comment, pr.commits);
 
-                    {comment.review_state ? (
-                      <span
-                        className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md font-mono border font-semibold ${
-                          comment.review_state === 'CHANGES_REQUESTED'
-                            ? 'bg-rose-50 text-rose-700 border-rose-200'
-                            : comment.review_state === 'APPROVED'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-purple-50 text-purple-700 border-purple-200'
-                        }`}
+              return (
+                <div
+                  key={`${comment.id}-${comment.review_state || (comment.is_review_comment ? 'rev' : 'iss')}`}
+                  className="w-full rounded-lg bg-white border border-gray-200 p-4 shadow-sm space-y-3 transition-colors hover:border-gray-300"
+                >
+                  {/* Comment Author Header */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-gray-100 w-full">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {comment.user.avatar_url ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={comment.user.avatar_url}
+                          alt={comment.user.login}
+                          className="w-5 h-5 rounded-full border border-gray-200"
+                        />
+                      ) : (
+                        <User className="w-4 h-4 text-gray-400" />
+                      )}
+                      <a
+                        href={comment.user.html_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-xs text-blue-700 hover:underline"
                       >
-                        <FileCode className="w-3 h-3" />
-                        PR Review: {comment.review_state.replace(/_/g, ' ')}
-                      </span>
-                    ) : comment.is_review_comment ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-mono border border-purple-200">
-                        <FileCode className="w-3 h-3" />
-                        Code Review {comment.path ? `: ${comment.path}${comment.line ? `#L${comment.line}` : ''}` : ''}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 font-mono border border-gray-200">
-                        Issue Comment
-                      </span>
-                    )}
+                        @{comment.user.login}
+                      </a>
+
+                      {comment.review_state ? (
+                        <span
+                          className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md font-mono border font-semibold ${
+                            comment.review_state === 'CHANGES_REQUESTED'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : comment.review_state === 'APPROVED'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-purple-50 text-purple-700 border-purple-200'
+                          }`}
+                        >
+                          <FileCode className="w-3 h-3" />
+                          PR Review: {comment.review_state.replace(/_/g, ' ')}
+                        </span>
+                      ) : comment.is_review_comment ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-mono border border-purple-200">
+                          <FileCode className="w-3 h-3" />
+                          Code Review {comment.path ? `: ${comment.path}${comment.line ? `#L${comment.line}` : ''}` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-500 font-mono border border-gray-200">
+                          Issue Comment
+                        </span>
+                      )}
+                    </div>
+
+                    <span
+                      className="text-[11px] text-gray-400 flex items-center gap-1 font-mono"
+                      title={new Date(comment.created_at).toLocaleString()}
+                    >
+                      <Clock className="w-3 h-3 text-gray-300" />
+                      {formatRelativeTime(comment.created_at)}
+                    </span>
                   </div>
 
-                  <span
-                    className="text-[11px] text-gray-400 flex items-center gap-1 font-mono"
-                    title={new Date(comment.created_at).toLocaleString()}
-                  >
-                    <Clock className="w-3 h-3 text-gray-300" />
-                    {formatRelativeTime(comment.created_at)}
-                  </span>
-                </div>
+                  {/* Comment Rendered Markdown Content - Uses Full Width */}
+                  <div className="w-full pt-1">
+                    <MarkdownRenderer content={comment.body} />
+                  </div>
 
-                {/* Comment Rendered Markdown Content - Uses Full Width */}
-                <div className="w-full pt-1">
-                  <MarkdownRenderer content={comment.body} />
+                  {/* Rebase Status Indicator (if comment asks for rebase) */}
+                  {rebaseStatus.asksForRebase && (
+                    <div
+                      className={`mt-3 p-3 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs transition-all ${
+                        rebaseStatus.hasCommitsSince
+                          ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
+                          : 'bg-amber-50/90 border-amber-200 text-amber-900'
+                      }`}
+                    >
+                      <div className="flex items-start sm:items-center gap-2.5">
+                        {rebaseStatus.hasCommitsSince ? (
+                          <div className="p-1 rounded-md bg-emerald-100 text-emerald-600 shrink-0 mt-0.5 sm:mt-0">
+                            <CheckCircle2 className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <div className="p-1 rounded-md bg-amber-100 text-amber-600 shrink-0 mt-0.5 sm:mt-0">
+                            <AlertCircle className="w-4 h-4" />
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-semibold flex items-center gap-2 flex-wrap">
+                            <span>
+                              {rebaseStatus.hasCommitsSince
+                                ? 'Branch Rebased / Commits Made'
+                                : 'No Commits Made Since Request'}
+                            </span>
+                            <span
+                              className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold ${
+                                rebaseStatus.hasCommitsSince
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : 'bg-amber-100 text-amber-800 border border-amber-200'
+                              }`}
+                            >
+                              {rebaseStatus.hasCommitsSince
+                                ? `${rebaseStatus.commitsSinceCount} commit${
+                                    rebaseStatus.commitsSinceCount > 1 ? 's' : ''
+                                  } since comment`
+                                : '0 commits since comment'}
+                            </span>
+                          </div>
+                          <p
+                            className={`text-[11px] mt-0.5 leading-normal ${
+                              rebaseStatus.hasCommitsSince ? 'text-emerald-700' : 'text-amber-700'
+                            }`}
+                          >
+                            {rebaseStatus.hasCommitsSince
+                              ? `Commits were pushed to ${pr.head.ref} after this comment${
+                                  rebaseStatus.latestCommitDate
+                                    ? ` (latest ${formatRelativeTime(rebaseStatus.latestCommitDate)})`
+                                    : ''
+                                }.`
+                              : `No new commits have been pushed to ${pr.head.ref} since this comment asked for a rebase.`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="shrink-0 font-mono text-[10px] font-medium">
+                        {rebaseStatus.hasCommitsSince ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-100/90 px-2.5 py-1 rounded-md border border-emerald-200 font-semibold shadow-2xs">
+                            <GitCommit className="w-3.5 h-3.5 text-emerald-600" /> Rebased
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-amber-800 bg-amber-100/90 px-2.5 py-1 rounded-md border border-amber-200 font-semibold shadow-2xs">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" /> Not Rebased
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -448,14 +532,16 @@ export const PRCard: React.FC<PRCardProps> = ({
               >
                 {getGateIcon(gate.rule.buttonIcon)}
                 <span>{gate.rule.buttonLabel}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
-                  {gate.targetAgent}
-                </span>
+                {gate.rule.actionType !== 'undraft_pr' && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                    {gate.targetAgent}
+                  </span>
+                )}
               </button>
             ))
           )}
 
-          {!pr.has_merge_conflicts && (
+          {!pr.is_draft && !pr.has_merge_conflicts && (
             <button
               onClick={handleOpenMergeModal}
               disabled={isMerging}

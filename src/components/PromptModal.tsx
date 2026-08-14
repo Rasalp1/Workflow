@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AgentType, EvaluatedGateResult, PRWithGates } from '@/types';
-import { X, Play, Terminal, Cpu, Folder, AlertTriangle, CheckCircle2, MessageSquare } from 'lucide-react';
+import { X, Play, Terminal, Cpu, Folder, AlertTriangle, CheckCircle2, MessageSquare, GitPullRequest } from 'lucide-react';
 
 interface PromptModalProps {
   isOpen: boolean;
@@ -62,13 +62,33 @@ export const PromptModal: React.FC<PromptModalProps> = ({
 
   const { pr } = prWithGates;
   const isCommentAction = gateResult.rule.actionType === 'post_comment';
+  const isUndraftAction = gateResult.rule.actionType === 'undraft_pr';
 
   const handleAction = async () => {
     setIsSubmitting(true);
     setStatusMessage(null);
 
     try {
-      if (isCommentAction) {
+      if (isUndraftAction) {
+        // Convert PR from draft to open ready-for-review PR
+        const res = await fetch('/api/prs/undraft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repoFullName: pr.repo_full_name,
+            prNumber: pr.number,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || 'Failed to mark PR as ready for review');
+        }
+
+        setStatusMessage({
+          type: 'success',
+          text: `PR #${pr.number} marked as ready for review!`,
+        });
+      } else if (isCommentAction) {
         // Post GitHub comment directly
         const res = await fetch('/api/prs/comment', {
           method: 'POST',
@@ -105,9 +125,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({
         });
       }
 
-      setTimeout(() => {
-        onClose();
-      }, 1800);
+      onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Action failed.';
       setStatusMessage({
@@ -134,12 +152,12 @@ export const PromptModal: React.FC<PromptModalProps> = ({
         {/* Modal Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg border ${isCommentAction ? 'bg-amber-50 border-amber-200 text-amber-600' : 'bg-blue-50 border-blue-200 text-blue-600'}`}>
-              {isCommentAction ? <MessageSquare className="w-4 h-4" /> : <Terminal className="w-4 h-4" />}
+            <div className={`p-2 rounded-lg border ${isUndraftAction ? 'bg-blue-50 border-blue-200 text-blue-600' : isCommentAction ? 'bg-amber-50 border-amber-200 text-amber-600' : 'bg-blue-50 border-blue-200 text-blue-600'}`}>
+              {isUndraftAction ? <GitPullRequest className="w-4 h-4" /> : isCommentAction ? <MessageSquare className="w-4 h-4" /> : <Terminal className="w-4 h-4" />}
             </div>
             <div>
               <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                {isCommentAction ? 'Post GitHub Comment:' : 'Trigger Agent:'}{' '}
+                {isUndraftAction ? 'Convert Draft PR:' : isCommentAction ? 'Post GitHub Comment:' : 'Trigger Agent:'}{' '}
                 <span className="text-blue-600">{gateResult.rule.buttonLabel}</span>
               </h3>
               <p className="text-xs text-gray-500">
@@ -159,7 +177,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({
         {/* Modal Content */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1 bg-white">
           {/* Target Local Folder Mapping Notice (Only for spawn agent action) */}
-          {!isCommentAction && (
+          {!isCommentAction && !isUndraftAction && (
             <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-between text-xs">
               <div className="flex items-center gap-2 text-gray-600">
                 <Folder className="w-4 h-4 text-blue-500 shrink-0" />
@@ -178,7 +196,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({
           )}
 
           {/* Agent Selector (Only for spawn agent action) */}
-          {!isCommentAction && (
+          {!isCommentAction && !isUndraftAction && (
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-gray-700">CLI Agent Binary:</label>
               <div className="grid grid-cols-2 gap-2">
@@ -215,7 +233,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-gray-700">
-                {isCommentAction ? 'GitHub Comment Body:' : 'Generated Prompt:'}
+                {isUndraftAction ? 'Action Description:' : isCommentAction ? 'GitHub Comment Body:' : 'Generated Prompt:'}
               </label>
               <span className="text-[11px] text-gray-400">Dynamically compiled from logical gate rules</span>
             </div>
@@ -258,19 +276,31 @@ export const PromptModal: React.FC<PromptModalProps> = ({
 
           <button
             onClick={handleAction}
-            disabled={isSubmitting || (!isCommentAction && !pr.local_path)}
+            disabled={isSubmitting || (!isCommentAction && !isUndraftAction && !pr.local_path)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-semibold disabled:opacity-50 transition-all ${
-              isCommentAction
+              isUndraftAction
+                ? 'bg-blue-600 hover:bg-blue-700'
+                : isCommentAction
                 ? 'bg-amber-500 hover:bg-amber-600'
                 : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
-            {isCommentAction ? <MessageSquare className="w-4 h-4" /> : <Play className="w-4 h-4 fill-white" />}
+            {isUndraftAction ? (
+              <GitPullRequest className="w-4 h-4" />
+            ) : isCommentAction ? (
+              <MessageSquare className="w-4 h-4" />
+            ) : (
+              <Play className="w-4 h-4 fill-white" />
+            )}
             <span>
               {isSubmitting
-                ? isCommentAction
+                ? isUndraftAction
+                  ? 'Converting to Open PR...'
+                  : isCommentAction
                   ? 'Posting Comment...'
                   : 'Spawning in IDE Terminal...'
+                : isUndraftAction
+                ? 'Mark Ready for Review'
                 : isCommentAction
                 ? 'Post Comment on GitHub PR'
                 : 'Spawn Agent in Antigravity Terminal'}

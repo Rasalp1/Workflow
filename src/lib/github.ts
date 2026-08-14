@@ -1,4 +1,4 @@
-import { PRComment, PullRequest } from '@/types';
+import { PRComment, PRCommit, PullRequest } from '@/types';
 
 async function fetchGitHubAPI(endpoint: string, token?: string, noCache = true) {
   const authToken = token || process.env.GITHUB_TOKEN;
@@ -74,14 +74,27 @@ export async function getRepoPullRequests(
       const base = rawPr.base as { ref: string };
       const user = rawPr.user as { login: string; avatar_url: string; html_url: string };
 
-      // Fetch single PR details, issue comments, inline review comments & PR reviews in parallel (all pages)
-      const [singlePrDetails, issueComments, reviewComments, prReviews, combinedStatus] = await Promise.all([
+      // Fetch single PR details, issue comments, inline review comments, PR reviews & PR commits in parallel
+      const [singlePrDetails, issueComments, reviewComments, prReviews, combinedStatus, prCommits] = await Promise.all([
         fetchGitHubAPI(`/repos/${owner}/${repo}/pulls/${prNumber}`, token, true).catch(() => null),
         fetchAllGitHubPages(`/repos/${owner}/${repo}/issues/${prNumber}/comments`, token).catch(() => []),
         fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, token).catch(() => []),
         fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, token).catch(() => []),
         fetchGitHubAPI(`/repos/${owner}/${repo}/commits/${head.sha}/status`, token, true).catch(() => null),
+        fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/commits`, token).catch(() => []),
       ]);
+
+      const formattedCommits: PRCommit[] = (prCommits || []).map((c: Record<string, unknown>) => {
+        const commitObj = (c.commit as Record<string, unknown>) || {};
+        const authorObj = (commitObj.author as Record<string, string>) || {};
+        const committerObj = (commitObj.committer as Record<string, string>) || {};
+        return {
+          sha: (c.sha as string) || '',
+          author_date: authorObj.date || '',
+          committer_date: committerObj.date || authorObj.date || '',
+          message: (commitObj.message as string) || '',
+        };
+      });
 
       const formattedIssueComments: PRComment[] = (issueComments || []).map((c: Record<string, unknown>) => ({
         id: c.id as number,
@@ -182,6 +195,7 @@ export async function getRepoPullRequests(
         comments_count: allComments.length,
         review_comments_count: formattedReviewComments.length + formattedReviews.length,
         comments: allComments,
+        commits: formattedCommits,
         last_comment: lastComment,
         checks_status: checksStatus,
         has_merge_conflicts: hasMergeConflicts,
@@ -275,4 +289,104 @@ export async function mergePullRequest(
     sha: data.sha,
   };
 }
+
+export async function undraftPullRequest(
+  repoFullName: string,
+  prNumber: number,
+  token?: string
+): Promise<{ success: boolean; message: string }> {
+  const [owner, repo] = repoFullName.split('/');
+  if (!owner || !repo) {
+    throw new Error(`Invalid repo format "${repoFullName}". Expected "owner/repo"`);
+  }
+  const authToken = token || process.env.GITHUB_TOKEN;
+  if (!authToken) {
+    throw new Error('GitHub token is required to update pull request draft status.');
+  }
+
+  // Primary Method: GitHub GraphQL API markPullRequestReadyForReview mutation
+  const queryPrNode = `
+    query GetPrNodeId($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          id
+          isDraft
+        }
+      }
+    }
+  `;
+
+  const gqlQueryRes = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'Workflow-Dashboard-App',
+    },
+    body: JSON.stringify({
+      query: queryPrNode,
+      variables: { owner, repo, number: prNumber },
+    }),
+  });
+
+  if (!gqlQueryRes.ok) {
+    const errorText = await gqlQueryRes.text();
+    throw new Error(`GitHub GraphQL API error (${gqlQueryRes.status}): ${errorText}`);
+  }
+
+  const gqlData = await gqlQueryRes.json();
+  if (gqlData.errors && gqlData.errors.length > 0) {
+    throw new Error(`GraphQL query error: ${gqlData.errors[0].message}`);
+  }
+
+  const prNode = gqlData?.data?.repository?.pullRequest;
+  if (!prNode || !prNode.id) {
+    throw new Error(`Pull Request #${prNumber} not found in repository ${repoFullName}`);
+  }
+
+  const mutation = `
+    mutation MarkPRReady($prNodeId: ID!) {
+      markPullRequestReadyForReview(input: { pullRequestId: $prNodeId }) {
+        pullRequest {
+          id
+          isDraft
+        }
+      }
+    }
+  `;
+
+  const gqlMutRes = await fetch('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'Workflow-Dashboard-App',
+    },
+    body: JSON.stringify({
+      query: mutation,
+      variables: { prNodeId: prNode.id },
+    }),
+  });
+
+  if (!gqlMutRes.ok) {
+    const errorText = await gqlMutRes.text();
+    throw new Error(`GitHub GraphQL mutation HTTP error (${gqlMutRes.status}): ${errorText}`);
+  }
+
+  const mutData = await gqlMutRes.json();
+  if (mutData.errors && mutData.errors.length > 0) {
+    throw new Error(`Failed to convert draft PR #${prNumber}: ${mutData.errors[0].message}`);
+  }
+
+  const updatedIsDraft = mutData?.data?.markPullRequestReadyForReview?.pullRequest?.isDraft;
+  if (updatedIsDraft === true) {
+    throw new Error(`GitHub reported PR #${prNumber} is still in draft state after mutation.`);
+  }
+
+  return {
+    success: true,
+    message: `PR #${prNumber} successfully converted to open ready-for-review PR`,
+  };
+}
+
 

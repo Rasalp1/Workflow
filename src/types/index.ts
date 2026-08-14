@@ -25,6 +25,13 @@ export interface PRComment {
   review_state?: string;
 }
 
+export interface PRCommit {
+  sha: string;
+  author_date: string;
+  committer_date: string;
+  message: string;
+}
+
 export interface PullRequest {
   id: number;
   number: number;
@@ -49,6 +56,7 @@ export interface PullRequest {
   comments_count: number;
   review_comments_count: number;
   comments: PRComment[];
+  commits?: PRCommit[];
   last_comment?: PRComment;
   checks_status?: 'success' | 'failure' | 'pending' | 'unknown';
   has_merge_conflicts?: boolean;
@@ -65,7 +73,7 @@ export interface LogicalGateRule {
   buttonIcon?: string;
   buttonColor?: 'blue' | 'purple' | 'amber' | 'emerald' | 'rose' | 'indigo';
   agentOverride?: AgentType;
-  actionType?: 'spawn_agent' | 'post_comment'; // Default is spawn_agent
+  actionType?: 'spawn_agent' | 'post_comment' | 'undraft_pr'; // Default is spawn_agent
   conditions: {
     prOwnedByCurrentUser?: boolean;
     prOwnedByNonCurrentUser?: boolean;
@@ -77,6 +85,7 @@ export interface LogicalGateRule {
     hasUnresolvedComments?: boolean;
     checksFailing?: boolean;
     titleOrBodyKeyword?: string;
+    isDraft?: boolean;
   };
   promptTemplate: string; // Dynamic template string or comment text
 }

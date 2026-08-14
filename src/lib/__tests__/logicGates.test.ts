@@ -102,6 +102,53 @@ describe('Logic Gates Evaluator', () => {
     assert.strictEqual(result.passed, true);
   });
 
+  it('should pass draft rule and suppress non-draft rules when PR is draft', () => {
+    const draftPR: PullRequest = {
+      ...dummyPR,
+      is_draft: true,
+    };
+
+    const draftRule: LogicalGateRule = {
+      id: 'convert-draft-to-ready',
+      name: 'Mark Ready for Review',
+      description: 'Converts draft to open PR.',
+      enabled: true,
+      buttonLabel: 'Ready for Review',
+      actionType: 'undraft_pr',
+      conditions: {
+        isDraft: true,
+      },
+      promptTemplate: 'Convert PR #{pr_number} from draft to open PR.',
+    };
+
+    // Draft rule on draft PR -> should pass
+    const draftResult = evaluateGateRule(draftRule, draftPR, 'alice', 'codex');
+    assert.strictEqual(draftResult.passed, true);
+
+    // Non-draft rule on draft PR -> should be suppressed (passed = false)
+    const normalResult = evaluateGateRule(sampleRule, draftPR, 'alice', 'codex');
+    assert.strictEqual(normalResult.passed, false);
+  });
+
+  it('should fail draft rule when PR is not draft', () => {
+    const draftRule: LogicalGateRule = {
+      id: 'convert-draft-to-ready',
+      name: 'Mark Ready for Review',
+      description: 'Converts draft to open PR.',
+      enabled: true,
+      buttonLabel: 'Ready for Review',
+      actionType: 'undraft_pr',
+      conditions: {
+        isDraft: true,
+      },
+      promptTemplate: 'Convert PR #{pr_number} from draft to open PR.',
+    };
+
+    // Draft rule on non-draft PR -> should fail
+    const result = evaluateGateRule(draftRule, dummyPR, 'alice', 'codex');
+    assert.strictEqual(result.passed, false);
+  });
+
   describe('isPrAwaitingComment', () => {
     it('returns true when last comment is by someone else', () => {
       // dummyPR author is alice, last comment is by bob
