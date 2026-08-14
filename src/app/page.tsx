@@ -21,16 +21,18 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Active In-Process Agents State
-  const [activeAgentPRs, setActiveAgentPRs] = useState<Record<string, ActiveAgentInfo>>(() => {
-    if (typeof window === 'undefined') return {};
+  const [activeAgentPRs, setActiveAgentPRs] = useState<Record<string, ActiveAgentInfo>>({});
+
+  useEffect(() => {
     try {
       const saved = localStorage.getItem('workflow_active_agent_prs');
-      return saved ? JSON.parse(saved) : {};
+      if (saved) {
+        setActiveAgentPRs(JSON.parse(saved));
+      }
     } catch (e) {
       console.error('Failed to load active agent state from localStorage:', e);
-      return {};
     }
-  });
+  }, []);
 
   // Dual Active Column PR States & Refs
   const [activeCol1PRId, setActiveCol1PRId] = useState<string | null>(null);

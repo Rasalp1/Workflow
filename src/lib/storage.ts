@@ -114,6 +114,7 @@ For each issue:
     conditions: {
       prOwnedByNonCurrentUser: true,
       lastCommentNotCurrentUser: true,
+      notReviewedByOthers: true,
     },
     promptTemplate: `Look at the complete comment history on the pr that exists on this branch, PR #{pr_number}. We’re the reviewer. Has the author adressed all the issues we identified? Are there any new issues that have been created? Is the author pushing back on anything we’ve said in a previous review? Why? Do they do so rightfully, or are they just disobedient? Do a complete code review of this PR. Think long and hard to verify that the claimed fixes are in place, and try to find any new issues that have arisen, and try to find unrelated issues on this PR that were missed before! When you’ve completed your code review, publish a "changes requested" comment type on the PR with your detailed feedback.`,
   },
@@ -219,11 +220,11 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
         const missingDefaultRules = DEFAULT_RULES.filter((dr) => !existingIds.has(dr.id));
         const mergedRules = [...missingDefaultRules, ...rules];
 
-        // Migration: remove legacy hasCommentsByCurrentUser blocking condition from review-with-context rule if present
+        // Migration: ensure review-with-context has notReviewedByOthers and remove legacy conditions
         const cleanedRules = mergedRules.map((r: LogicalGateRule) => {
           if (r.id === 'review-with-context' && r.conditions) {
             const { hasCommentsByCurrentUser, ...restConditions } = r.conditions;
-            return { ...r, conditions: restConditions };
+            return { ...r, conditions: { notReviewedByOthers: true, ...restConditions } };
           }
           return r;
         });
