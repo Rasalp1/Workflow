@@ -71,6 +71,25 @@ export default function Dashboard() {
     });
   };
 
+  const handleStartActiveAgent = (cardId: string, agent: AgentType = 'codex') => {
+    const cardKey = cardId.replace(/^(col1-|col2-)/, '');
+    setActiveAgentPRs((prev) => {
+      const updated = {
+        ...prev,
+        [cardKey]: {
+          agent,
+          timestamp: Date.now(),
+        },
+      };
+      try {
+        localStorage.setItem('workflow_active_agent_prs', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to update localStorage:', e);
+      }
+      return updated;
+    });
+  };
+
   const handleClearAllActiveAgents = () => {
     setActiveAgentPRs({});
     try {
@@ -282,7 +301,7 @@ export default function Dashboard() {
     return () => observer.disconnect();
   }, [col2PRs]);
 
-  const handleSelectPR = (cardId: string) => {
+  const handleSelectPR = (cardId: string, position: 'top' | 'bottom' = 'bottom') => {
     const foundPR = prsWithGates.find(
       ({ pr }) => `pr-card-${pr.repo_full_name}-${pr.number}` === cardId
     );
@@ -313,24 +332,38 @@ export default function Dashboard() {
     }
 
     setTimeout(() => {
-      if (inCol1 || (!inCol1 && !inCol2)) {
-        const targetId = `col1-${cardId}`;
-        const actionBar = document.getElementById(`${targetId}-action-bar`);
-        if (actionBar) {
-          actionBar.scrollIntoView({ behavior: 'smooth', block: 'end' });
-        } else {
+      const scrollTarget = (targetId: string) => {
+        if (position === 'top') {
           const el = document.getElementById(targetId);
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return true;
+          }
+        } else {
+          const actionBar = document.getElementById(`${targetId}-action-bar`);
+          if (actionBar) {
+            actionBar.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            return true;
+          } else {
+            const el = document.getElementById(targetId);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+              return true;
+            }
+          }
         }
+        return false;
+      };
+
+      if (inCol1) {
+        scrollTarget(`col1-${cardId}`);
       }
       if (inCol2) {
-        const targetId = `col2-${cardId}`;
-        const actionBar = document.getElementById(`${targetId}-action-bar`);
-        if (actionBar) {
-          actionBar.scrollIntoView({ behavior: 'smooth', block: 'end' });
-        } else {
-          const el = document.getElementById(targetId);
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        scrollTarget(`col2-${cardId}`);
+      }
+      if (!inCol1 && !inCol2) {
+        if (!scrollTarget(`col2-${cardId}`)) {
+          scrollTarget(`col1-${cardId}`);
         }
       }
     }, 100);
@@ -631,6 +664,8 @@ export default function Dashboard() {
         onClearActiveAgent={handleClearActiveAgent}
         onClearAllActiveAgents={handleClearAllActiveAgents}
         onSelectPR={handleSelectPR}
+        col1Repo={col1Repo}
+        col2Repo={col2Repo}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       />
@@ -860,6 +895,7 @@ export default function Dashboard() {
           prWithGates={activeGateTrigger.prWithGates}
           gateResult={activeGateTrigger.gateResult}
           onConfirmSpawn={handleConfirmSpawn}
+          onStartActiveAgent={handleStartActiveAgent}
         />
       )}
 
