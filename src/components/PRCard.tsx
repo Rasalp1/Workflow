@@ -23,6 +23,8 @@ import {
   RefreshCw,
   X,
   FolderPlus,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 interface PRCardProps {
@@ -61,6 +63,18 @@ export const PRCard: React.FC<PRCardProps> = ({
 
   const [isSpawningWorktree, setIsSpawningWorktree] = useState(false);
   const [worktreeError, setWorktreeError] = useState<string | null>(null);
+  const [copiedBranch, setCopiedBranch] = useState(false);
+
+  const handleCopyBranch = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(`git checkout ${pr.head.ref} && git pull`);
+      setCopiedBranch(true);
+      setTimeout(() => setCopiedBranch(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy branch checkout command', err);
+    }
+  };
 
   const handleOpenWorktree = async (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -492,10 +506,23 @@ export const PRCard: React.FC<PRCardProps> = ({
           <span className="text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-mono font-semibold border border-blue-200">
             #{pr.number}
           </span>
-          <span className="text-xs text-gray-600 font-mono bg-gray-50 px-2 py-0.5 rounded-md border border-gray-200 flex items-center gap-1.5" title={`${pr.head.ref} → ${pr.base.ref}`}>
+          <div className="inline-flex items-center text-xs text-gray-600 font-mono bg-gray-50 pl-2 pr-1 py-0.5 rounded-md border border-gray-200 gap-1.5" title={`${pr.head.ref} → ${pr.base.ref}`}>
             <GitBranch className="w-3 h-3 text-gray-400" />
-            {pr.head.ref}
-          </span>
+            <span className="truncate max-w-[200px] sm:max-w-xs">{pr.head.ref}</span>
+            <button
+              type="button"
+              onClick={handleCopyBranch}
+              className="p-0.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-200/70 transition-colors cursor-pointer"
+              title={copiedBranch ? 'Checkout command copied!' : `Copy "git checkout ${pr.head.ref} && git pull"`}
+              aria-label={`Copy git checkout ${pr.head.ref} && git pull`}
+            >
+              {copiedBranch ? (
+                <Check className="w-3 h-3 text-emerald-600" />
+              ) : (
+                <Copy className="w-3 h-3" />
+              )}
+            </button>
+          </div>
           {pr.has_merge_conflicts && (
             <span
               className="text-xs flex items-center gap-1 text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 font-semibold"

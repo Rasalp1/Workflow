@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AgentType, EvaluatedGateResult, PRWithGates } from '@/types';
-import { X, Play, Terminal, Cpu, Folder, AlertTriangle, CheckCircle2, MessageSquare, GitPullRequest } from 'lucide-react';
+import { X, Play, Terminal, Cpu, Folder, AlertTriangle, CheckCircle2, MessageSquare, GitPullRequest, Copy, Check } from 'lucide-react';
 
 interface PromptModalProps {
   isOpen: boolean;
@@ -18,6 +18,7 @@ interface PromptModalProps {
     prompt: string;
     cardId?: string;
   }) => Promise<void>;
+  onStartActiveAgent?: (cardId: string, agent?: AgentType) => void;
 }
 
 export const PromptModal: React.FC<PromptModalProps> = ({
@@ -26,6 +27,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({
   prWithGates,
   gateResult,
   onConfirmSpawn,
+  onStartActiveAgent,
 }) => {
   const [mounted, setMounted] = useState(false);
   const [prevGateId, setPrevGateId] = useState<string | null>(null);
@@ -33,6 +35,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({
   const [selectedAgent, setSelectedAgent] = useState<AgentType>('codex');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -51,6 +54,22 @@ export const PromptModal: React.FC<PromptModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isSubmitting, onClose]);
 
+  // Listen for copy event in window while modal is open to start active agent spinner and collapse modal
+  useEffect(() => {
+    if (!isOpen || !prWithGates) return;
+
+    const handleCopy = () => {
+      if (onStartActiveAgent) {
+        const cardId = `pr-card-${prWithGates.pr.repo_full_name}-${prWithGates.pr.number}`;
+        onStartActiveAgent(cardId, selectedAgent);
+      }
+      onClose();
+    };
+
+    window.addEventListener('copy', handleCopy);
+    return () => window.removeEventListener('copy', handleCopy);
+  }, [isOpen, prWithGates, selectedAgent, onStartActiveAgent, onClose]);
+
   if (gateResult && gateResult.rule.id !== prevGateId) {
     setPrevGateId(gateResult.rule.id);
     setPromptText(gateResult.generatedPrompt);
@@ -63,6 +82,20 @@ export const PromptModal: React.FC<PromptModalProps> = ({
   const { pr } = prWithGates;
   const isCommentAction = gateResult.rule.actionType === 'post_comment';
   const isUndraftAction = gateResult.rule.actionType === 'undraft_pr';
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(promptText);
+      setCopiedPrompt(true);
+      if (onStartActiveAgent && prWithGates) {
+        const cardId = `pr-card-${prWithGates.pr.repo_full_name}-${prWithGates.pr.number}`;
+        onStartActiveAgent(cardId, selectedAgent);
+      }
+      onClose();
+    } catch (err) {
+      console.error('Failed to copy prompt', err);
+    }
+  };
 
   const handleAction = async () => {
     setIsSubmitting(true);
@@ -242,6 +275,13 @@ export const PromptModal: React.FC<PromptModalProps> = ({
               rows={6}
               value={promptText}
               onChange={(e) => setPromptText(e.target.value)}
+              onCopy={() => {
+                if (onStartActiveAgent && prWithGates) {
+                  const cardId = `pr-card-${prWithGates.pr.repo_full_name}-${prWithGates.pr.number}`;
+                  onStartActiveAgent(cardId, selectedAgent);
+                }
+                onClose();
+              }}
               className="w-full p-3 rounded-lg bg-gray-50 border border-gray-200 text-xs font-mono text-gray-800 focus:outline-none focus:border-blue-400 focus:bg-white transition-colors leading-relaxed"
             />
           </div>
@@ -265,46 +305,62 @@ export const PromptModal: React.FC<PromptModalProps> = ({
           )}
         </div>
 
-        {/* Modal Footer */}
-        <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-          >
-            Cancel
-          </button>
+        {/* Modal Footer: Cancel and Spawn Buttons on Left, Copy Prompt Button on Right */}
+        <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+
+            <button
+              onClick={handleAction}
+              disabled={isSubmitting || (!isCommentAction && !isUndraftAction && !pr.local_path)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-semibold disabled:opacity-50 transition-all ${
+                isUndraftAction
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : isCommentAction
+                  ? 'bg-amber-500 hover:bg-amber-600'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              {isUndraftAction ? (
+                <GitPullRequest className="w-4 h-4" />
+              ) : isCommentAction ? (
+                <MessageSquare className="w-4 h-4" />
+              ) : (
+                <Play className="w-4 h-4 fill-white" />
+              )}
+              <span>
+                {isSubmitting
+                  ? isUndraftAction
+                    ? 'Converting to Open PR...'
+                    : isCommentAction
+                    ? 'Posting Comment...'
+                    : 'Spawning in IDE Terminal...'
+                  : isUndraftAction
+                  ? 'Mark Ready for Review'
+                  : isCommentAction
+                  ? 'Post Comment on GitHub PR'
+                  : 'Spawn Agent in Antigravity Terminal'}
+              </span>
+            </button>
+          </div>
 
           <button
-            onClick={handleAction}
-            disabled={isSubmitting || (!isCommentAction && !isUndraftAction && !pr.local_path)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-semibold disabled:opacity-50 transition-all ${
-              isUndraftAction
-                ? 'bg-blue-600 hover:bg-blue-700'
-                : isCommentAction
-                ? 'bg-amber-500 hover:bg-amber-600'
-                : 'bg-blue-600 hover:bg-blue-700'
-            }`}
+            type="button"
+            onClick={handleCopyPrompt}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white hover:bg-gray-50 text-gray-700 text-xs font-semibold border border-gray-200 hover:border-gray-300 transition-all shadow-2xs cursor-pointer ml-auto"
+            title="Copy entire prompt to clipboard and start agent spinner"
           >
-            {isUndraftAction ? (
-              <GitPullRequest className="w-4 h-4" />
-            ) : isCommentAction ? (
-              <MessageSquare className="w-4 h-4" />
+            {copiedPrompt ? (
+              <Check className="w-4 h-4 text-emerald-600" />
             ) : (
-              <Play className="w-4 h-4 fill-white" />
+              <Copy className="w-4 h-4 text-gray-500" />
             )}
-            <span>
-              {isSubmitting
-                ? isUndraftAction
-                  ? 'Converting to Open PR...'
-                  : isCommentAction
-                  ? 'Posting Comment...'
-                  : 'Spawning in IDE Terminal...'
-                : isUndraftAction
-                ? 'Mark Ready for Review'
-                : isCommentAction
-                ? 'Post Comment on GitHub PR'
-                : 'Spawn Agent in Antigravity Terminal'}
-            </span>
+            <span>{copiedPrompt ? 'Prompt Copied!' : 'Copy Prompt'}</span>
           </button>
         </div>
       </div>

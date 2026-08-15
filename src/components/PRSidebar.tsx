@@ -8,7 +8,7 @@ interface PRSidebarProps {
   activeCol2PRId?: string | null;
   activePRId?: string | null;
   activeAgentPRs?: Record<string, ActiveAgentInfo>;
-  onSelectPR: (prId: string) => void;
+  onSelectPR: (prId: string, position?: 'top' | 'bottom') => void;
 }
 
 export const PRSidebar: React.FC<PRSidebarProps> = ({
@@ -67,7 +67,7 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({
             return (
               <button
                 key={cardId}
-                onClick={() => onSelectPR(cardId)}
+                onClick={() => onSelectPR(cardId, 'top')}
                 className={`w-full text-left px-3 py-2.5 rounded-lg transition-all border flex flex-col gap-1.5 group ${containerClasses}`}
               >
                 <div className="flex items-center justify-between gap-2">

@@ -20,7 +20,9 @@ interface HeaderProps {
   activeAgentPRs?: Record<string, ActiveAgentInfo>;
   onClearActiveAgent?: (cardId: string) => void;
   onClearAllActiveAgents?: () => void;
-  onSelectPR: (cardId: string) => void;
+  onSelectPR: (cardId: string, position?: 'top' | 'bottom') => void;
+  col1Repo?: string;
+  col2Repo?: string;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
 }
@@ -40,11 +42,19 @@ export const Header: React.FC<HeaderProps> = ({
   activeAgentPRs = {},
   onClearAllActiveAgents,
   onSelectPR,
+  col1Repo,
+  col2Repo,
   searchQuery = '',
   onSearchChange,
 }) => {
   const activeAgentCount = Object.keys(activeAgentPRs).length;
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+
+  const getRepoTheme = (repoName: string, index: number): 'blue' | 'purple' => {
+    if (col2Repo && repoName === col2Repo) return 'purple';
+    if (col1Repo && repoName === col1Repo) return 'blue';
+    return index % 2 === 1 ? 'purple' : 'blue';
+  };
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-3 mb-6" style={{ boxShadow: '0 1px 3px 0 rgba(0,0,0,0.06)' }}>
@@ -126,57 +136,92 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
 
                   <div className="space-y-3 max-h-72 overflow-y-auto pr-0.5">
-                    {theirsToHandleItems.map(({ repoName, prs }) => (
-                      <div key={repoName} className="space-y-1.5">
-                        <div className="text-[11px] font-semibold text-blue-600 truncate border-b border-gray-100 pb-1 uppercase tracking-wider" title={repoName}>
-                          {repoName.split('/')[1] || repoName}
-                        </div>
-                        {prs.length === 0 ? (
-                          <div className="text-[11px] text-gray-400 italic py-1 px-1">None</div>
-                        ) : (
-                          <div className="space-y-1">
-                            {prs.map((pr) => {
-                              const isInProcess = Boolean(activeAgentPRs[pr.cardId]);
-                              const agentInfo = activeAgentPRs[pr.cardId];
-                              return (
-                                <button
-                                  key={pr.number}
-                                  onClick={() => onSelectPR(pr.cardId)}
-                                  className={`w-full text-left px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all flex items-center justify-between group/pr ${
-                                    isInProcess
-                                      ? 'bg-blue-50/80 border-blue-200 text-blue-900 font-semibold'
-                                      : 'bg-gray-50 hover:bg-blue-50 border-gray-200 hover:border-blue-200 text-gray-700'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2 truncate">
-                                    <span className="text-blue-600 font-bold">#{pr.number}</span>
-                                    <span className="text-[10px] text-gray-600 group-hover/pr:text-gray-900 font-sans truncate max-w-[150px]" title={pr.branchName || pr.title}>
-                                      {pr.branchName || pr.title}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    {pr.hasMergeConflicts && (
-                                      <span className="text-[9px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded shrink-0">
-                                        Conflict
-                                      </span>
-                                    )}
-                                    {isInProcess ? (
-                                      <span className="text-[10px] text-blue-700 bg-blue-100/80 border border-blue-200 px-2 py-0.5 rounded-md font-sans font-semibold flex items-center gap-1.5 shrink-0">
-                                        <RefreshCw className="w-3 h-3 text-blue-600 animate-spin" />
-                                        <span>{agentInfo?.agent || 'agent'}</span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-[10px] text-gray-400 group-hover/pr:text-blue-600 shrink-0">Jump →</span>
-                                    )}
-                                  </div>
-                                </button>
-                              );
-                            })}
+                    {theirsToHandleItems.map(({ repoName, prs }, repoIdx) => {
+                      const isPurple = getRepoTheme(repoName, repoIdx) === 'purple';
+                      return (
+                        <div key={repoName} className="space-y-1.5">
+                          <div
+                            className={`text-[11px] font-semibold truncate border-b border-gray-100 pb-1 uppercase tracking-wider ${
+                              isPurple ? 'text-purple-600' : 'text-blue-600'
+                            }`}
+                            title={repoName}
+                          >
+                            {repoName.split('/')[1] || repoName}
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          {prs.length === 0 ? (
+                            <div className="text-[11px] text-gray-400 italic py-1 px-1">None</div>
+                          ) : (
+                            <div className="space-y-1">
+                              {prs.map((pr) => {
+                                const isInProcess = Boolean(activeAgentPRs[pr.cardId]);
+                                const agentInfo = activeAgentPRs[pr.cardId];
+                                return (
+                                  <button
+                                    key={pr.number}
+                                    onClick={() => onSelectPR(pr.cardId, 'bottom')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all flex items-center justify-between group/pr ${
+                                      isInProcess
+                                        ? isPurple
+                                          ? 'bg-purple-50/80 border-purple-200 text-purple-900 font-semibold'
+                                          : 'bg-blue-50/80 border-blue-200 text-blue-900 font-semibold'
+                                        : isPurple
+                                        ? 'bg-gray-50 hover:bg-purple-50 border-gray-200 hover:border-purple-200 text-gray-700'
+                                        : 'bg-gray-50 hover:bg-blue-50 border-gray-200 hover:border-blue-200 text-gray-700'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 truncate">
+                                      <span className={`${isPurple ? 'text-purple-600' : 'text-blue-600'} font-bold`}>
+                                        #{pr.number}
+                                      </span>
+                                      <span
+                                        className="text-[10px] text-gray-600 group-hover/pr:text-gray-900 font-sans truncate max-w-[150px]"
+                                        title={pr.branchName || pr.title}
+                                      >
+                                        {pr.branchName || pr.title}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {pr.hasMergeConflicts && (
+                                        <span className="text-[9px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded shrink-0">
+                                          Conflict
+                                        </span>
+                                      )}
+                                      {isInProcess ? (
+                                        <span
+                                          className={`text-[10px] px-2 py-0.5 rounded-md font-sans font-semibold flex items-center gap-1.5 shrink-0 ${
+                                            isPurple
+                                              ? 'text-purple-700 bg-purple-100/80 border border-purple-200'
+                                              : 'text-blue-700 bg-blue-100/80 border border-blue-200'
+                                          }`}
+                                        >
+                                          <RefreshCw
+                                            className={`w-3 h-3 ${
+                                              isPurple ? 'text-purple-600' : 'text-blue-600'
+                                            } animate-spin`}
+                                          />
+                                          <span>{agentInfo?.agent || 'agent'}</span>
+                                        </span>
+                                      ) : (
+                                        <span
+                                          className={`text-[10px] text-gray-400 shrink-0 ${
+                                            isPurple
+                                              ? 'group-hover/pr:text-purple-600'
+                                              : 'group-hover/pr:text-blue-600'
+                                          }`}
+                                        >
+                                          Jump →
+                                        </span>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -217,57 +262,92 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
 
                   <div className="space-y-3 max-h-72 overflow-y-auto pr-0.5">
-                    {awaitingCommentItems.map(({ repoName, prs }) => (
-                      <div key={repoName} className="space-y-1.5">
-                        <div className="text-[11px] font-semibold text-blue-600 truncate border-b border-gray-100 pb-1 uppercase tracking-wider" title={repoName}>
-                          {repoName.split('/')[1] || repoName}
-                        </div>
-                        {prs.length === 0 ? (
-                          <div className="text-[11px] text-gray-400 italic py-1 px-1">None</div>
-                        ) : (
-                          <div className="space-y-1">
-                            {prs.map((pr) => {
-                              const isInProcess = Boolean(activeAgentPRs[pr.cardId]);
-                              const agentInfo = activeAgentPRs[pr.cardId];
-                              return (
-                                <button
-                                  key={pr.number}
-                                  onClick={() => onSelectPR(pr.cardId)}
-                                  className={`w-full text-left px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all flex items-center justify-between group/pr ${
-                                    isInProcess
-                                      ? 'bg-blue-50/80 border-blue-200 text-blue-900 font-semibold'
-                                      : 'bg-gray-50 hover:bg-blue-50 border-gray-200 hover:border-blue-200 text-gray-700'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2 truncate">
-                                    <span className="text-blue-600 font-bold">#{pr.number}</span>
-                                    <span className="text-[10px] text-gray-600 group-hover/pr:text-gray-900 font-sans truncate max-w-[150px]" title={pr.branchName || pr.title}>
-                                      {pr.branchName || pr.title}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    {pr.hasMergeConflicts && (
-                                      <span className="text-[9px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded shrink-0">
-                                        Conflict
-                                      </span>
-                                    )}
-                                    {isInProcess ? (
-                                      <span className="text-[10px] text-blue-700 bg-blue-100/80 border border-blue-200 px-2 py-0.5 rounded-md font-sans font-semibold flex items-center gap-1.5 shrink-0">
-                                        <RefreshCw className="w-3 h-3 text-blue-600 animate-spin" />
-                                        <span>{agentInfo?.agent || 'agent'}</span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-[10px] text-gray-400 group-hover/pr:text-blue-600 shrink-0">Jump →</span>
-                                    )}
-                                  </div>
-                                </button>
-                              );
-                            })}
+                    {awaitingCommentItems.map(({ repoName, prs }, repoIdx) => {
+                      const isPurple = getRepoTheme(repoName, repoIdx) === 'purple';
+                      return (
+                        <div key={repoName} className="space-y-1.5">
+                          <div
+                            className={`text-[11px] font-semibold truncate border-b border-gray-100 pb-1 uppercase tracking-wider ${
+                              isPurple ? 'text-purple-600' : 'text-blue-600'
+                            }`}
+                            title={repoName}
+                          >
+                            {repoName.split('/')[1] || repoName}
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          {prs.length === 0 ? (
+                            <div className="text-[11px] text-gray-400 italic py-1 px-1">None</div>
+                          ) : (
+                            <div className="space-y-1">
+                              {prs.map((pr) => {
+                                const isInProcess = Boolean(activeAgentPRs[pr.cardId]);
+                                const agentInfo = activeAgentPRs[pr.cardId];
+                                return (
+                                  <button
+                                    key={pr.number}
+                                    onClick={() => onSelectPR(pr.cardId, 'bottom')}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-all flex items-center justify-between group/pr ${
+                                      isInProcess
+                                        ? isPurple
+                                          ? 'bg-purple-50/80 border-purple-200 text-purple-900 font-semibold'
+                                          : 'bg-blue-50/80 border-blue-200 text-blue-900 font-semibold'
+                                        : isPurple
+                                        ? 'bg-gray-50 hover:bg-purple-50 border-gray-200 hover:border-purple-200 text-gray-700'
+                                        : 'bg-gray-50 hover:bg-blue-50 border-gray-200 hover:border-blue-200 text-gray-700'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 truncate">
+                                      <span className={`${isPurple ? 'text-purple-600' : 'text-blue-600'} font-bold`}>
+                                        #{pr.number}
+                                      </span>
+                                      <span
+                                        className="text-[10px] text-gray-600 group-hover/pr:text-gray-900 font-sans truncate max-w-[150px]"
+                                        title={pr.branchName || pr.title}
+                                      >
+                                        {pr.branchName || pr.title}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {pr.hasMergeConflicts && (
+                                        <span className="text-[9px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded shrink-0">
+                                          Conflict
+                                        </span>
+                                      )}
+                                      {isInProcess ? (
+                                        <span
+                                          className={`text-[10px] px-2 py-0.5 rounded-md font-sans font-semibold flex items-center gap-1.5 shrink-0 ${
+                                            isPurple
+                                              ? 'text-purple-700 bg-purple-100/80 border border-purple-200'
+                                              : 'text-blue-700 bg-blue-100/80 border border-blue-200'
+                                          }`}
+                                        >
+                                          <RefreshCw
+                                            className={`w-3 h-3 ${
+                                              isPurple ? 'text-purple-600' : 'text-blue-600'
+                                            } animate-spin`}
+                                          />
+                                          <span>{agentInfo?.agent || 'agent'}</span>
+                                        </span>
+                                      ) : (
+                                        <span
+                                          className={`text-[10px] text-gray-400 shrink-0 ${
+                                            isPurple
+                                              ? 'group-hover/pr:text-purple-600'
+                                              : 'group-hover/pr:text-blue-600'
+                                          }`}
+                                        >
+                                          Jump →
+                                        </span>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
