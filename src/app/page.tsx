@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { ActiveAgentInfo, AgentType, AppConfig, EvaluatedGateResult, LogicalGateRule, PRWithGates } from '@/types';
+import { getActiveAgentCardIdsToClear } from '@/lib/activeAgentState';
 import { isPrAwaitingComment } from '@/lib/logicGates';
 import { Header } from '@/components/Header';
 import { PRCard } from '@/components/PRCard';
@@ -113,9 +114,30 @@ export default function Dashboard() {
       } else {
         const fetchedPRs = data.prsWithGates || [];
         const repos = data.monitoredRepos || [];
+        const fetchedCurrentUser = data.currentUser || null;
         setPrsWithGates(fetchedPRs);
         setMonitoredRepos(repos);
-        setCurrentUser(data.currentUser || null);
+        setCurrentUser(fetchedCurrentUser);
+
+        setActiveAgentPRs((prev) => {
+          const cardIdsToClear = getActiveAgentCardIdsToClear(prev, fetchedPRs, fetchedCurrentUser);
+          if (cardIdsToClear.length === 0) return prev;
+
+          const updated = { ...prev };
+          cardIdsToClear.forEach((cardId) => delete updated[cardId]);
+
+          try {
+            if (Object.keys(updated).length === 0) {
+              localStorage.removeItem('workflow_active_agent_prs');
+            } else {
+              localStorage.setItem('workflow_active_agent_prs', JSON.stringify(updated));
+            }
+          } catch (e) {
+            console.error('Failed to reconcile active agent sessions in localStorage:', e);
+          }
+
+          return updated;
+        });
 
         // Auto-assign default repos to columns if not set and ensure distinct selection
         if (repos.length > 0) {
