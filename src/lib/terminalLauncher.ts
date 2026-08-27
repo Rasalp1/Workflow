@@ -19,6 +19,7 @@ export interface SpawnAgentOptions {
 export interface SpawnWorktreeOptions {
   repoPath: string;
   branchName: string;
+  agent?: AgentType;
 }
 
 /**
@@ -213,7 +214,8 @@ export async function spawnAgentInTerminal({
 export async function spawnWorktreeInAntigravity({
   repoPath,
   branchName,
-}: SpawnWorktreeOptions): Promise<{ success: boolean; message: string; worktreePath: string }> {
+  agent = 'codex',
+}: SpawnWorktreeOptions): Promise<{ success: boolean; message: string; worktreePath: string; agent?: AgentType }> {
   try {
     validateLocalPath(repoPath);
     const cleanRepoPath = repoPath.replace(/\/$/, '');
@@ -222,12 +224,14 @@ export async function spawnWorktreeInAntigravity({
     await openTerminalInAntigravity({
       cleanRepoPath,
       targetDir: worktreePath,
+      cliCommand: agent,
     });
 
     return {
       success: true,
-      message: `Worktree for branch "${branchName}" opened in Antigravity IDE at "${worktreePath}"`,
+      message: `Worktree for branch "${branchName}" opened with ${agent} in Antigravity IDE at "${worktreePath}"`,
       worktreePath,
+      agent,
     };
   } catch (error: unknown) {
     console.error('Failed to spawn worktree in Antigravity:', error);
@@ -315,6 +319,3 @@ export async function closeAllWorktreesInTerminal({
     };
   }
 }
-
-
-

@@ -85,6 +85,7 @@ export const PRCard: React.FC<PRCardProps> = ({
       if (onOpenWorktree) {
         await onOpenWorktree(prWithGates);
       } else {
+        const preferredAgent = passedGates.find((g) => g.targetAgent)?.targetAgent;
         const res = await fetch('/api/worktree/spawn', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -92,6 +93,7 @@ export const PRCard: React.FC<PRCardProps> = ({
             repoFullName: pr.repo_full_name,
             localPath: pr.local_path || '',
             branchName: pr.head.ref,
+            agent: preferredAgent,
           }),
         });
         const data = await res.json();
@@ -534,39 +536,37 @@ export const PRCard: React.FC<PRCardProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {passedGates.length === 0 ? (
+          <button
+            onClick={handleOpenWorktree}
+            disabled={isSpawningWorktree}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 hover:border-sky-300 transition-all disabled:opacity-50 cursor-pointer shadow-2xs"
+            title={`Open Git worktree for branch ${pr.head.ref} in Antigravity IDE terminal`}
+          >
+            {isSpawningWorktree ? (
+              <RefreshCw className="w-3.5 h-3.5 text-sky-600 animate-spin" />
+            ) : (
+              <FolderPlus className="w-3.5 h-3.5 text-sky-600" />
+            )}
+            <span>{isSpawningWorktree ? 'Opening Worktree...' : 'Worktree'}</span>
+          </button>
+
+          {passedGates.map((gate) => (
             <button
-              onClick={handleOpenWorktree}
-              disabled={isSpawningWorktree}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 hover:border-sky-300 transition-all disabled:opacity-50 cursor-pointer shadow-2xs"
-              title={`Open Git worktree for branch ${pr.head.ref} in Antigravity IDE terminal`}
+              key={gate.rule.id}
+              onClick={() => onTriggerGate(prWithGates, gate)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${getGateButtonStyles(
+                gate.rule.buttonColor
+              )}`}
             >
-              {isSpawningWorktree ? (
-                <RefreshCw className="w-3.5 h-3.5 text-sky-600 animate-spin" />
-              ) : (
-                <FolderPlus className="w-3.5 h-3.5 text-sky-600" />
+              {getGateIcon(gate.rule.buttonIcon)}
+              <span>{gate.rule.buttonLabel}</span>
+              {gate.rule.actionType !== 'undraft_pr' && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                  {gate.targetAgent}
+                </span>
               )}
-              <span>{isSpawningWorktree ? 'Opening Worktree...' : 'Worktree'}</span>
             </button>
-          ) : (
-            passedGates.map((gate) => (
-              <button
-                key={gate.rule.id}
-                onClick={() => onTriggerGate(prWithGates, gate)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${getGateButtonStyles(
-                  gate.rule.buttonColor
-                )}`}
-              >
-                {getGateIcon(gate.rule.buttonIcon)}
-                <span>{gate.rule.buttonLabel}</span>
-                {gate.rule.actionType !== 'undraft_pr' && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
-                    {gate.targetAgent}
-                  </span>
-                )}
-              </button>
-            ))
-          )}
+          ))}
 
           {!pr.is_draft && !pr.has_merge_conflicts && (
             <button

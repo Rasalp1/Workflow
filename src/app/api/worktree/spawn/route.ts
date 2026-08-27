@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   try {
     validateOrigin(request);
     const body = await request.json();
-    const { repoFullName, localPath, branchName } = body;
+    const { repoFullName, localPath, branchName, agent } = body;
 
     if (!branchName) {
       return NextResponse.json({ error: 'Branch name is required' }, { status: 400 });
@@ -28,9 +28,12 @@ export async function POST(request: Request) {
       );
     }
 
+    const targetAgent = (agent || config.defaultAgent || 'codex') as import('@/types').AgentType;
+
     const result = await spawnWorktreeInAntigravity({
       repoPath: targetPath,
       branchName,
+      agent: targetAgent,
     });
 
     if (!result.success) {
@@ -41,6 +44,7 @@ export async function POST(request: Request) {
       success: true,
       message: result.message,
       worktreePath: result.worktreePath,
+      agent: targetAgent,
     });
   } catch (error: unknown) {
     console.error('API /api/worktree/spawn Error:', error);
