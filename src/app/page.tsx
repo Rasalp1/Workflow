@@ -579,7 +579,16 @@ export default function Dashboard() {
 
   const handleOpenWorktree = async (prWithGates: PRWithGates) => {
     try {
-      setActionBanner({ type: 'info', message: `Opening Git worktree for branch "${prWithGates.pr.head.ref}" in Antigravity IDE...` });
+      const preferredAgent =
+        prWithGates.evaluatedGates.find((g) => g.passed && g.targetAgent)?.targetAgent ||
+        config?.defaultAgent ||
+        'codex';
+
+      setActionBanner({
+        type: 'info',
+        message: `Opening Git worktree for branch "${prWithGates.pr.head.ref}" with ${preferredAgent} in Antigravity IDE...`,
+      });
+
       const res = await fetch('/api/worktree/spawn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -587,13 +596,37 @@ export default function Dashboard() {
           repoFullName: prWithGates.pr.repo_full_name,
           localPath: prWithGates.pr.local_path || '',
           branchName: prWithGates.pr.head.ref,
+          agent: preferredAgent,
         }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
         throw new Error(data.error || 'Failed to spawn worktree');
       }
-      setActionBanner({ type: 'success', message: data.message || `Worktree opened for branch "${prWithGates.pr.head.ref}"!` });
+
+      const cardKey = `pr-card-${prWithGates.pr.repo_full_name}-${prWithGates.pr.number}`;
+      const launchedAgent: AgentType = data.agent || preferredAgent;
+
+      setActiveAgentPRs((prev) => {
+        const updated = {
+          ...prev,
+          [cardKey]: {
+            agent: launchedAgent,
+            timestamp: Date.now(),
+          },
+        };
+        try {
+          localStorage.setItem('workflow_active_agent_prs', JSON.stringify(updated));
+        } catch (e) {
+          console.error(e);
+        }
+        return updated;
+      });
+
+      setActionBanner({
+        type: 'success',
+        message: data.message || `Worktree opened with ${launchedAgent} for branch "${prWithGates.pr.head.ref}"!`,
+      });
       setTimeout(() => setActionBanner(null), 5000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to spawn worktree';
