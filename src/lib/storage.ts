@@ -38,6 +38,21 @@ export const DEFAULT_RULES: LogicalGateRule[] = [
     promptTemplate: `Address review issues for PR #{pr_number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer  blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
   },
   {
+    id: 'address-latest-comment',
+    name: 'Address Recent Comment',
+    description: 'Address only the very recentmost comment/review on this PR instead of full history.',
+    enabled: true,
+    buttonLabel: 'Address Latest',
+    buttonIcon: 'Wrench',
+    buttonColor: 'purple',
+    actionType: 'spawn_agent',
+    conditions: {
+      prOwnedByCurrentUser: true,
+      lastCommentNotCurrentUser: true,
+    },
+    promptTemplate: `Address review feedback on PR #{pr_number} ({pr_title}) based ONLY on the recentmost comment by @{last_comment_author}:\n\n"{last_comment_body}"\n\nFocus specifically and solely on addressing the issues and feedback raised in this most recent comment, without getting distracted by previous conversation history. Check the issues raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to address the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a clear comment to the PR explaining what you did and why.`,
+  },
+  {
     id: 'code-review',
     name: 'Perform Code Review',
     description: 'PR owned by someone else with no comments yet.',
@@ -92,9 +107,9 @@ Analyze the selected code for:
 
 Provide feedback as:
 
-**🔴 Critical Issues** - Must fix before merge
-**🟡 Suggestions** - Improvements to consider
-**✅ Good Practices** - What's done well
+**[Critical Issues]** - Must fix before merge
+**[Suggestions]** - Improvements to consider
+**[Good Practices]** - What's done well
 
 For each issue:
 - Specific line references
@@ -119,6 +134,22 @@ For each issue:
     promptTemplate: `Look at the complete comment history on the pr that exists on this branch, PR #{pr_number}. We’re the reviewer. Has the author adressed all the issues we identified? Are there any new issues that have been created? Is the author pushing back on anything we’ve said in a previous review? Why? Do they do so rightfully, or are they just disobedient? Do a complete code review of this PR. Think long and hard to verify that the claimed fixes are in place, and try to find any new issues that have arisen, and try to find unrelated issues on this PR that were missed before! When you’ve completed your code review, publish a "changes requested" comment type on the PR with your detailed feedback.`,
   },
   {
+    id: 'review-latest-comment',
+    name: 'Review Recent Comment',
+    description: 'Review PR considering only the author’s very recentmost comment/update instead of full history.',
+    enabled: true,
+    buttonLabel: 'Review Latest',
+    buttonIcon: 'Eye',
+    buttonColor: 'emerald',
+    actionType: 'spawn_agent',
+    conditions: {
+      prOwnedByNonCurrentUser: true,
+      lastCommentNotCurrentUser: true,
+      notReviewedByOthers: true,
+    },
+    promptTemplate: `Review PR #{pr_number} ({pr_title}) against branch {base_branch}, focusing specifically on the author’s recentmost response by @{last_comment_author}:\n\n"{last_comment_body}"\n\nWe’re the reviewer. Instead of re-evaluating the full historical comment backlog, focus specifically on this latest update and comment. Has the author addressed the specific points raised in this recentmost feedback? Are the claimed fixes in place in the code, or are they pushing back rightfully? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
+  },
+  {
     id: 'rebase-user-pr',
     name: 'Rebase User PR Branch',
     description: 'PR owned by user that has merge conflicts.',
@@ -138,7 +169,7 @@ For each issue:
     name: 'Request Author Rebase Comment',
     description: 'PR owned by non-user that has merge conflicts.',
     enabled: true,
-    buttonLabel: 'Rebase',
+    buttonLabel: 'Ask author to rebase',
     buttonIcon: 'GitBranch',
     buttonColor: 'amber',
     actionType: 'post_comment',
@@ -220,16 +251,21 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
         const missingDefaultRules = DEFAULT_RULES.filter((dr) => !existingIds.has(dr.id));
         const mergedRules = [...missingDefaultRules, ...rules];
 
-        // Migration: ensure review-with-context has notReviewedByOthers and remove legacy conditions
+        let hasChanges = missingDefaultRules.length > 0;
         const cleanedRules = mergedRules.map((r: LogicalGateRule) => {
-          if (r.id === 'review-with-context' && r.conditions) {
-            const { hasCommentsByCurrentUser, ...restConditions } = r.conditions;
-            return { ...r, conditions: { notReviewedByOthers: true, ...restConditions } };
+          let updated = r;
+          if (updated.id === 'review-with-context' && updated.conditions) {
+            const { hasCommentsByCurrentUser, ...restConditions } = updated.conditions;
+            updated = { ...updated, conditions: { notReviewedByOthers: true, ...restConditions } };
           }
-          return r;
+          if (updated.id === 'rebase-non-user-pr' && updated.buttonLabel === 'Rebase') {
+            updated = { ...updated, buttonLabel: 'Ask author to rebase' };
+            hasChanges = true;
+          }
+          return updated;
         });
 
-        if (missingDefaultRules.length > 0) {
+        if (hasChanges) {
           await saveRules(cleanedRules);
         }
 
