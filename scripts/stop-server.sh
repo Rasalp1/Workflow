@@ -1,5 +1,6 @@
 #!/bin/bash
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+PROJECT_DIR="/Users/rasmusalpsten/Drive C/Projects/Workflow"
 
 LISTEN_PIDS=$(lsof -ti :3000 -sTCP:LISTEN 2>/dev/null)
 
@@ -20,3 +21,8 @@ if [ -n "$LISTEN_PIDS" ]; then
 else
     echo "No server running on port 3000."
 fi
+
+# Stop workflow-menubar if running
+pkill -f "workflow-menubar" 2>/dev/null || true
+rm -f "$PROJECT_DIR/.workflow-data/menubar.pid" 2>/dev/null || true
+
