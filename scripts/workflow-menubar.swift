@@ -100,21 +100,44 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
     
+    private func createWorkflowMenubarIcon() -> NSImage {
+        let svgString = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18">
+          <path d="M0 0h24v24H0z" fill="none" />
+          <g fill="none" stroke="#000000" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 4c0-1.655.345-2 2-2h4c1.655 0 2 .345 2 2s-.345 2-2 2H5c-1.655 0-2-.345-2-2Zm10 9c0-1.655.345-2 2-2h4c1.655 0 2 .345 2 2s-.345 2-2 2h-4c-1.655 0-2-.345-2-2Zm-9 7c0-1.655.345-2 2-2h4c1.655 0 2 .345 2 2s-.345 2-2 2H6c-1.655 0-2-.345-2-2Z" />
+            <path d="M17 11c0-.465 0-.697-.038-.89a2 2 0 0 0-1.572-1.572c-.193-.038-.425-.038-.89-.038h-5c-.465 0-.697 0-.89-.038A2 2 0 0 1 7.038 6.89C7 6.697 7 6.465 7 6m10 9v1c0 1.886 0 2.828-.586 3.414S14.886 20 13 20h-1" />
+          </g>
+        </svg>
+        """
+        if let data = svgString.data(using: .utf8),
+           let svgImg = NSImage(data: data) {
+            let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+                svgImg.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
+                return true
+            }
+            img.isTemplate = true
+            return img
+        }
+        
+        // Fallback
+        if #available(macOS 11.0, *) {
+            let symbolConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+            if let image = NSImage(systemSymbolName: "arrow.triangle.pull", accessibilityDescription: "Workflow")?.withSymbolConfiguration(symbolConfig) {
+                image.isTemplate = true
+                return image
+            }
+        }
+        let fallback = NSImage(size: NSSize(width: 18, height: 18))
+        fallback.isTemplate = true
+        return fallback
+    }
+    
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem.button {
-            if #available(macOS 11.0, *) {
-                let symbolConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-                if let image = NSImage(systemSymbolName: "arrow.triangle.pull", accessibilityDescription: "Pull Requests")?.withSymbolConfiguration(symbolConfig) {
-                    image.isTemplate = true
-                    button.image = image
-                } else {
-                    button.title = "PR"
-                }
-            } else {
-                button.title = "PR"
-            }
+            button.image = createWorkflowMenubarIcon()
             button.imagePosition = .imageLeft
             button.title = " …"
             button.toolTip = "Workflow: Connecting to server..."
@@ -205,9 +228,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         
-        if error {
-            button.title = " !"
-            button.toolTip = "Workflow: Error reading PR data"
+        if error || (latestData?.error != nil && (latestData?.prsWithGates?.isEmpty ?? true)) {
+            button.title = " ⚠️"
+            button.toolTip = "Workflow: \(latestData?.error ?? "Error reading PR data")"
             return
         }
         
@@ -233,7 +256,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(headerItem)
         
-        if isOffline {
+        if let err = latestData?.error {
+            let errItem = NSMenuItem(title: "  ⚠️ \(err)", action: nil, keyEquivalent: "")
+            errItem.isEnabled = false
+            menu.addItem(errItem)
+        } else if isOffline {
             let statusItem = NSMenuItem(title: "  ● Server offline (localhost:\(port))", action: nil, keyEquivalent: "")
             statusItem.isEnabled = false
             menu.addItem(statusItem)
@@ -248,7 +275,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // 2. PR List section
         let sectionTitle = isOffline 
             ? "Pull Requests (Server Offline)" 
-            : "Pull Requests (\(prs.count))"
+            : (latestData?.error != nil ? "Pull Requests (Connection Error)" : "Pull Requests (\(prs.count))")
         let prSectionItem = NSMenuItem(title: sectionTitle, action: nil, keyEquivalent: "")
         prSectionItem.isEnabled = false
         if let font = NSFont.systemFont(ofSize: 11, weight: .semibold) as NSFont? {
@@ -257,8 +284,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(prSectionItem)
         
         if prs.isEmpty {
+            let emptyTitle = isOffline 
+                ? "Waiting for server connection..." 
+                : (latestData?.error != nil ? "GitHub connection issue (check app settings)" : "No open pull requests 🎉")
             let emptyItem = NSMenuItem(
-                title: isOffline ? "Waiting for server connection..." : "No open pull requests 🎉",
+                title: emptyTitle,
                 action: nil,
                 keyEquivalent: ""
             )

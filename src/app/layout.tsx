@@ -23,7 +23,7 @@ export const metadata: Metadata = {
       { url: "/favicon.svg", type: "image/svg+xml" },
     ],
     shortcut: "/icon.png",
-    apple: "/icon.png",
+    apple: "/apple-touch-icon.png",
   },
   openGraph: {
     title: "Workflow | Local-First PR Management & AI Agent Hub",

@@ -95,7 +95,11 @@
 }
 .brand-icon {
   color: var(--accent);
-  padding-top: 3px;
+  padding-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 .brand-name {
   font-weight: 650;

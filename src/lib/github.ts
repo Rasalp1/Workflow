@@ -1,6 +1,53 @@
 import { PRComment, PRCommit, PullRequest } from '@/types';
 
+export class GitHubRateLimitError extends Error {
+  public resetAt: Date;
+  public resetSeconds: number;
+  public resetMinutes: number;
+
+  constructor(message: string, resetAt: Date) {
+    super(message);
+    this.name = 'GitHubRateLimitError';
+    this.resetAt = resetAt;
+    this.resetSeconds = Math.max(0, Math.ceil((resetAt.getTime() - Date.now()) / 1000));
+    this.resetMinutes = Math.max(1, Math.ceil(this.resetSeconds / 60));
+  }
+}
+
+let rateLimitResetTimestamp: number | null = null;
+
+export function getRateLimitStatus(): { isRateLimited: boolean; resetAt: Date | null; resetMinutes: number } {
+  if (rateLimitResetTimestamp && Date.now() < rateLimitResetTimestamp) {
+    const resetAt = new Date(rateLimitResetTimestamp);
+    const resetMinutes = Math.max(1, Math.ceil((rateLimitResetTimestamp - Date.now()) / 60000));
+    return { isRateLimited: true, resetAt, resetMinutes };
+  }
+  rateLimitResetTimestamp = null;
+  return { isRateLimited: false, resetAt: null, resetMinutes: 0 };
+}
+
+// In-memory short TTL cache for full repo PR responses to coalesce rapid/concurrent polls
+const repoPrsCache = new Map<string, { prs: PullRequest[]; timestamp: number }>();
+const REPO_CACHE_TTL_MS = 25000; // 25 seconds
+
+// In-memory cache for detailed PR objects keyed by `${repoFullName}#${prNumber}@${updated_at}`
+const prDetailsCache = new Map<string, PullRequest>();
+
+export function clearGitHubCache() {
+  repoPrsCache.clear();
+  prDetailsCache.clear();
+  rateLimitResetTimestamp = null;
+}
+
 async function fetchGitHubAPI(endpoint: string, token?: string, noCache = true) {
+  const rateLimit = getRateLimitStatus();
+  if (rateLimit.isRateLimited && rateLimit.resetAt) {
+    throw new GitHubRateLimitError(
+      `GitHub API rate limit exceeded. Resets at ${rateLimit.resetAt.toLocaleTimeString()} (in ~${rateLimit.resetMinutes} min).`,
+      rateLimit.resetAt
+    );
+  }
+
   const authToken = token || process.env.GITHUB_TOKEN;
   const headers: Record<string, string> = {
     'Accept': 'application/vnd.github.v3+json',
@@ -18,8 +65,34 @@ async function fetchGitHubAPI(endpoint: string, token?: string, noCache = true) 
 
   const res = await fetch(`https://api.github.com${endpoint}`, fetchOptions);
 
+  const remaining = res.headers.get('x-ratelimit-remaining');
+  const resetHeader = res.headers.get('x-ratelimit-reset');
+  if (resetHeader) {
+    const resetSec = parseInt(resetHeader, 10);
+    if (!isNaN(resetSec)) {
+      const resetTime = resetSec * 1000;
+      if (remaining === '0' || res.status === 403 || res.status === 429) {
+        rateLimitResetTimestamp = resetTime;
+      }
+    }
+  }
+
   if (!res.ok) {
     const errorText = await res.text();
+    if (res.status === 403 || res.status === 429) {
+      if (errorText.toLowerCase().includes('rate limit') || remaining === '0') {
+        const resetAt = rateLimitResetTimestamp ? new Date(rateLimitResetTimestamp) : new Date(Date.now() + 60000);
+        rateLimitResetTimestamp = resetAt.getTime();
+        const mins = Math.max(1, Math.ceil((rateLimitResetTimestamp - Date.now()) / 60000));
+        throw new GitHubRateLimitError(
+          `GitHub API rate limit exceeded. Resets at ${resetAt.toLocaleTimeString()} (in ~${mins} min${mins === 1 ? '' : 's'}).`,
+          resetAt
+        );
+      }
+    }
+    if (res.status === 401) {
+      throw new Error(`GitHub authentication failed (HTTP 401): Token is invalid or expired.`);
+    }
     throw new Error(`GitHub API HTTP ${res.status} for ${endpoint}: ${errorText}`);
   }
 
@@ -34,7 +107,10 @@ async function fetchAllGitHubPages(endpoint: string, token?: string): Promise<Re
   while (page <= maxPages) {
     const separator = endpoint.includes('?') ? '&' : '?';
     const pageEndpoint = `${endpoint}${separator}per_page=100&page=${page}`;
-    const data = await fetchGitHubAPI(pageEndpoint, token, true).catch(() => []);
+    const data = await fetchGitHubAPI(pageEndpoint, token, true).catch((err) => {
+      if (err instanceof GitHubRateLimitError) throw err;
+      return [];
+    });
     if (!Array.isArray(data) || data.length === 0) break;
     allData.push(...data);
     if (data.length < 100) break;
@@ -46,14 +122,22 @@ async function fetchAllGitHubPages(endpoint: string, token?: string): Promise<Re
 
 export async function getRepoPullRequests(
   repoFullName: string,
-  token?: string
+  token?: string,
+  forceRefresh = false
 ): Promise<PullRequest[]> {
   const [owner, repo] = repoFullName.split('/');
   if (!owner || !repo) {
     throw new Error(`Invalid repo format "${repoFullName}". Expected "owner/repo"`);
   }
 
-  // Fetch open pull requests
+  // Check short TTL cache for this repo unless explicitly forced
+  const cachedRepo = repoPrsCache.get(repoFullName);
+  const now = Date.now();
+  if (!forceRefresh && cachedRepo && now - cachedRepo.timestamp < REPO_CACHE_TTL_MS) {
+    return cachedRepo.prs;
+  }
+
+  // Fetch open pull requests (1 single call)
   const prsData = await fetchGitHubAPI(`/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc`, token, true);
 
   // Filter out PRs created by github-actions[bot]
@@ -70,18 +154,44 @@ export async function getRepoPullRequests(
   const pullRequests: PullRequest[] = await Promise.all(
     validPrsData.map(async (rawPr: Record<string, unknown>) => {
       const prNumber = rawPr.number as number;
+      const updatedAt = (rawPr.updated_at as string) || '';
+      const cacheKey = `${repoFullName}#${prNumber}@${updatedAt}`;
+
+      // If PR sub-resources are already cached for this exact updatedAt, reuse them!
+      if (!forceRefresh && prDetailsCache.has(cacheKey)) {
+        return prDetailsCache.get(cacheKey)!;
+      }
+
       const head = rawPr.head as { ref: string; sha: string };
       const base = rawPr.base as { ref: string };
       const user = rawPr.user as { login: string; avatar_url: string; html_url: string };
 
       // Fetch single PR details, issue comments, inline review comments, PR reviews & PR commits in parallel
       const [singlePrDetails, issueComments, reviewComments, prReviews, combinedStatus, prCommits] = await Promise.all([
-        fetchGitHubAPI(`/repos/${owner}/${repo}/pulls/${prNumber}`, token, true).catch(() => null),
-        fetchAllGitHubPages(`/repos/${owner}/${repo}/issues/${prNumber}/comments`, token).catch(() => []),
-        fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, token).catch(() => []),
-        fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, token).catch(() => []),
-        fetchGitHubAPI(`/repos/${owner}/${repo}/commits/${head.sha}/status`, token, true).catch(() => null),
-        fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/commits`, token).catch(() => []),
+        fetchGitHubAPI(`/repos/${owner}/${repo}/pulls/${prNumber}`, token, true).catch((err) => {
+          if (err instanceof GitHubRateLimitError) throw err;
+          return null;
+        }),
+        fetchAllGitHubPages(`/repos/${owner}/${repo}/issues/${prNumber}/comments`, token).catch((err) => {
+          if (err instanceof GitHubRateLimitError) throw err;
+          return [];
+        }),
+        fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/comments`, token).catch((err) => {
+          if (err instanceof GitHubRateLimitError) throw err;
+          return [];
+        }),
+        fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, token).catch((err) => {
+          if (err instanceof GitHubRateLimitError) throw err;
+          return [];
+        }),
+        fetchGitHubAPI(`/repos/${owner}/${repo}/commits/${head.sha}/status`, token, true).catch((err) => {
+          if (err instanceof GitHubRateLimitError) throw err;
+          return null;
+        }),
+        fetchAllGitHubPages(`/repos/${owner}/${repo}/pulls/${prNumber}/commits`, token).catch((err) => {
+          if (err instanceof GitHubRateLimitError) throw err;
+          return [];
+        }),
       ]);
 
       const formattedCommits: PRCommit[] = (prCommits || []).map((c: Record<string, unknown>) => {
@@ -202,18 +312,30 @@ export async function getRepoPullRequests(
         mergeable_state: singlePrDetails?.mergeable_state,
       };
 
+      prDetailsCache.set(cacheKey, prObj);
       return prObj;
     })
   );
 
+  repoPrsCache.set(repoFullName, { prs: pullRequests, timestamp: Date.now() });
   return pullRequests;
 }
 
 export async function fetchAuthenticatedUser(token?: string): Promise<string | null> {
+  const rateLimit = getRateLimitStatus();
+  if (rateLimit.isRateLimited && rateLimit.resetAt) {
+    throw new GitHubRateLimitError(
+      `GitHub API rate limit exceeded. Resets at ${rateLimit.resetAt.toLocaleTimeString()} (in ~${rateLimit.resetMinutes} min).`,
+      rateLimit.resetAt
+    );
+  }
   try {
     const user = await fetchGitHubAPI('/user', token);
     return user.login || null;
-  } catch {
+  } catch (err) {
+    if (err instanceof GitHubRateLimitError) {
+      throw err;
+    }
     return null;
   }
 }

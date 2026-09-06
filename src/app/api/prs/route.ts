@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchAuthenticatedUser, getRepoPullRequests } from '@/lib/github';
+import { fetchAuthenticatedUser, getRepoPullRequests, getRateLimitStatus, GitHubRateLimitError } from '@/lib/github';
 import { evaluateGateRule } from '@/lib/logicGates';
 import { loadConfig, loadRules } from '@/lib/storage';
 import { PRWithGates } from '@/types';
@@ -7,7 +7,7 @@ import { PRWithGates } from '@/types';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const config = await loadConfig();
     const rules = await loadRules();
@@ -17,18 +17,60 @@ export async function GET() {
         {
           error: 'GitHub Token is missing. Please set GITHUB_TOKEN in settings or .env.local',
           prs: [],
+          prsWithGates: [],
+          monitoredRepos: config.monitoredRepos || [],
         },
         { status: 200 }
       );
     }
 
-    const currentUser = await fetchAuthenticatedUser(config.githubToken);
+    const { searchParams } = new URL(request.url);
+    const force = searchParams.get('force') === 'true';
+
+    // Check rate limit upfront
+    const rateStatus = getRateLimitStatus();
+    if (rateStatus.isRateLimited && rateStatus.resetAt) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `GitHub API rate limit exceeded. Resets at ${rateStatus.resetAt.toLocaleTimeString()} (in ~${rateStatus.resetMinutes} min).`,
+          rateLimited: true,
+          resetAt: rateStatus.resetAt.toISOString(),
+          prs: [],
+          prsWithGates: [],
+          monitoredRepos: config.monitoredRepos || [],
+        },
+        { status: 200 }
+      );
+    }
+
+    let currentUser: string | null = null;
+    try {
+      currentUser = await fetchAuthenticatedUser(config.githubToken);
+    } catch (err: unknown) {
+      if (err instanceof GitHubRateLimitError) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: err.message,
+            rateLimited: true,
+            resetAt: err.resetAt.toISOString(),
+            prs: [],
+            prsWithGates: [],
+            monitoredRepos: config.monitoredRepos || [],
+          },
+          { status: 200 }
+        );
+      }
+      console.warn('Could not determine authenticated user:', err);
+    }
 
     const allPRsWithGates: PRWithGates[] = [];
+    const errors: string[] = [];
 
     for (const repoFullName of config.monitoredRepos) {
       try {
-        const prs = await getRepoPullRequests(repoFullName, config.githubToken);
+        const prs = await getRepoPullRequests(repoFullName, config.githubToken, force);
 
         const mappedPath = config.repoPaths[repoFullName] || process.env[`REPO_PATH_${repoFullName.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`];
 
@@ -48,7 +90,37 @@ export async function GET() {
         }
       } catch (err: unknown) {
         console.error(`Error fetching PRs for ${repoFullName}:`, err);
+        if (err instanceof GitHubRateLimitError) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: err.message,
+              rateLimited: true,
+              resetAt: err.resetAt.toISOString(),
+              prs: [],
+              prsWithGates: [],
+              monitoredRepos: config.monitoredRepos || [],
+            },
+            { status: 200 }
+          );
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`${repoFullName}: ${msg}`);
       }
+    }
+
+    // If there were repos configured and ALL failed, return error to alert the user
+    if (config.monitoredRepos.length > 0 && errors.length === config.monitoredRepos.length) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Failed to fetch PRs from GitHub: ${errors.join('; ')}`,
+          prs: [],
+          prsWithGates: [],
+          monitoredRepos: config.monitoredRepos,
+        },
+        { status: 200 }
+      );
     }
 
     return NextResponse.json(
@@ -57,6 +129,7 @@ export async function GET() {
         currentUser,
         prsWithGates: allPRsWithGates,
         monitoredRepos: config.monitoredRepos,
+        warning: errors.length > 0 ? errors.join('; ') : undefined,
       },
       {
         headers: {
