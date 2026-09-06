@@ -4,14 +4,16 @@ import React, { useEffect, useState, useRef } from 'react';
 import { ActiveAgentInfo, AgentType, AppConfig, EvaluatedGateResult, LogicalGateRule, PRWithGates } from '@/types';
 import { getActiveAgentCardIdsToClear } from '@/lib/activeAgentState';
 import { isPrAwaitingComment } from '@/lib/logicGates';
-import { Header } from '@/components/Header';
+import { Button } from '@/components/ui/Button';
+import { Notice } from '@/components/ui/Notice';
+import { Header, WorkspaceBrand } from '@/components/Header';
 import { PRCard } from '@/components/PRCard';
 import { PRSidebar } from '@/components/PRSidebar';
 import { PromptModal } from '@/components/PromptModal';
 import { RulesEditorModal } from '@/components/RulesEditorModal';
 import { SettingsModal } from '@/components/SettingsModal';
 import { CloseWorktreesConfirmModal } from '@/components/CloseWorktreesConfirmModal';
-import { GitPullRequest, RefreshCw, Key, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { GitPullRequest, RefreshCw, Key } from 'lucide-react';
 
 export default function Dashboard() {
   const [prsWithGates, setPrsWithGates] = useState<PRWithGates[]>([]);
@@ -358,18 +360,18 @@ export default function Dashboard() {
         if (position === 'top') {
           const el = document.getElementById(targetId);
           if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            el.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
             return true;
           }
         } else {
           const actionBar = document.getElementById(`${targetId}-action-bar`);
           if (actionBar) {
-            actionBar.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            actionBar.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'end' });
             return true;
           } else {
             const el = document.getElementById(targetId);
             if (el) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+              el.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'end' });
               return true;
             }
           }
@@ -408,21 +410,25 @@ export default function Dashboard() {
   };
 
   const handleSaveRules = async (updatedRules: LogicalGateRule[]) => {
-    await fetch('/api/rules', {
+    const response = await fetch('/api/rules', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rules: updatedRules }),
     });
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || 'Could not save rules.');
     setRules(updatedRules);
     fetchPRs();
   };
 
   const handleSaveConfig = async (updatedConfig: Partial<AppConfig>) => {
-    await fetch('/api/config', {
+    const response = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedConfig),
     });
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || 'Could not save settings.');
     fetchConfigAndRules();
     fetchPRs();
   };
@@ -701,7 +707,22 @@ export default function Dashboard() {
   const theirsToHandleItems = Object.entries(theirsReposMap).map(([repoName, prs]) => ({ repoName, prs }));
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 text-gray-900 overflow-hidden w-full">
+    <div className="workflow-app">
+      <a className="skip-link" href="#main-content">Skip to pull requests</a>
+      <div className="workspace-rail">
+        <WorkspaceBrand />
+            {/* PR Sidebar navigation */}
+            <PRSidebar
+              currentUser={currentUser}
+              prsWithGates={sortedPRs}
+              activeCol1PRId={effectiveActiveCol1PRId}
+              activeCol2PRId={effectiveActiveCol2PRId}
+              activeAgentPRs={activeAgentPRs}
+              onSelectPR={handleSelectPR}
+            />
+
+      </div>
+      <div className="workspace-content">
       {/* Header Bar */}
       <Header
         onRefresh={fetchPRs}
@@ -710,6 +731,7 @@ export default function Dashboard() {
         onOpenRules={() => setIsRulesModalOpen(true)}
         onOpenCloseWorktreesModal={() => setIsCloseWorktreesModalOpen(true)}
         currentUser={currentUser}
+        directAgentSpawn={config?.directAgentSpawn}
         prCount={searchFilteredPRs.length}
         awaitingCommentCount={prsAwaitingOurComment.length}
         theirsToHandleCount={searchFilteredPRs.length - prsAwaitingOurComment.length}
@@ -726,82 +748,57 @@ export default function Dashboard() {
       />
 
       {/* Main Container - Fills Remaining Screen Height */}
-      <main className="flex-1 flex flex-col w-full px-6 overflow-hidden pb-5">
+      <main className="workspace-main" id="main-content">
 
-        {/* Global Action Feedback Banner */}
         {actionBanner && (
-          <div
-            className={`p-3.5 mb-4 rounded-xl border text-xs flex items-center justify-between gap-3 shrink-0 shadow-sm ${
-              actionBanner.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                : actionBanner.type === 'error'
-                ? 'bg-rose-50 border-rose-200 text-rose-900'
-                : 'bg-blue-50 border-blue-200 text-blue-900'
-            }`}
-          >
-            <div className="flex items-center gap-2.5 font-medium">
-              {actionBanner.type === 'info' && <RefreshCw className="w-4 h-4 text-blue-500 animate-spin shrink-0" />}
-              {actionBanner.type === 'success' && <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />}
-              {actionBanner.type === 'error' && <ShieldAlert className="w-4 h-4 text-rose-500 shrink-0" />}
-              <span>{actionBanner.message}</span>
-            </div>
-            <button
-              onClick={() => setActionBanner(null)}
-              className="text-[11px] text-gray-400 hover:text-gray-700 font-semibold"
-            >
-              Dismiss
-            </button>
+          <div className="workspace-feedback">
+            <Notice tone={actionBanner.type === 'error' ? 'danger' : actionBanner.type}>
+              <div className="feedback-content"><span>{actionBanner.message}</span><Button variant="quiet" size="small" onClick={() => setActionBanner(null)}>Dismiss</Button></div>
+            </Notice>
           </div>
         )}
-
-        {/* Error Alert */}
         {error && (
-          <div className="p-4 mb-4 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-3 shrink-0">
-            <ShieldAlert className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <h4 className="text-sm font-semibold text-rose-800">GitHub API Notice</h4>
-              <p className="text-xs text-rose-600">{error}</p>
-              <button
-                onClick={() => setIsSettingsModalOpen(true)}
-                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors"
-              >
-                <Key className="w-3.5 h-3.5" /> Configure GitHub Access Token
-              </button>
-            </div>
+          <div className="workspace-feedback">
+            <Notice tone="danger" title="GitHub connection needs attention">
+              <p>{error}</p>
+              <div className="feedback-actions"><Button onClick={() => setIsSettingsModalOpen(true)}><Key size={15} />Open connection settings</Button><Button variant="primary" busy={isLoading} onClick={fetchPRs}>Try again</Button></div>
+            </Notice>
           </div>
         )}
 
         {/* Loading Spinner State */}
         {isLoading && prsWithGates.length === 0 ? (
-          <div className="py-24 text-center space-y-4 flex-1 flex flex-col justify-center items-center">
+          <div className="workspace-loading" role="status" aria-live="polite">
             <RefreshCw className="w-7 h-7 text-blue-500 animate-spin mx-auto" />
-            <p className="text-xs text-gray-400 font-medium">
-              Fetching private repositories, PRs, and comments...
+            <p>
+              Loading pull requests and discussions…
             </p>
           </div>
         ) : searchFilteredPRs.length === 0 ? (
           /* Empty State */
-          <div className="py-20 text-center panel rounded-xl p-12 space-y-3 my-auto">
-            <GitPullRequest className="w-10 h-10 text-gray-300 mx-auto" />
+          <div className="workspace-empty space-y-3">
+            <GitPullRequest className="empty-icon" />
             <h3 className="text-base font-semibold text-gray-700">
-              {searchQuery ? 'No Matching Pull Requests' : 'No Open Pull Requests Found'}
+              {error ? 'Unable to load pull requests' : searchQuery ? 'No matching pull requests' : 'Your review queue is clear'}
             </h3>
-            <p className="text-xs text-gray-400 max-w-md mx-auto">
-              {searchQuery
+            <p className="text-sm text-gray-500 max-w-md mx-auto">
+              {error
+                ? 'Check your GitHub connection above, then refresh to try again.'
+                : searchQuery
                 ? `No PRs matching "${searchQuery}" across monitored repositories.`
                 : 'There are currently no open PRs matching your filter across monitored repositories.'}
             </p>
             {searchQuery ? (
               <button
                 onClick={() => setSearchQuery('')}
-                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold border border-blue-200 transition-colors"
+                className="ui-button ui-button--primary"
               >
                 Clear Search
               </button>
             ) : (
               <button
                 onClick={fetchPRs}
-                className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium border border-gray-200 transition-colors"
+                className="ui-button ui-button--secondary"
               >
                 <RefreshCw className="w-3.5 h-3.5" /> Refresh
               </button>
@@ -809,38 +806,30 @@ export default function Dashboard() {
           </div>
         ) : (
           /* Sidebar + 2-Column Independent Scrolling Layout */
-          <div className="flex-1 flex flex-col lg:flex-row items-start gap-6 w-full min-h-0 overflow-hidden">
-            {/* PR Sidebar navigation */}
-            <PRSidebar
-              prsWithGates={sortedPRs}
-              activeCol1PRId={effectiveActiveCol1PRId}
-              activeCol2PRId={effectiveActiveCol2PRId}
-              activeAgentPRs={activeAgentPRs}
-              onSelectPR={handleSelectPR}
-            />
-
+          <div className="review-layout">
             {/* Two Independent Scrolling Columns */}
-            <div className="flex-1 w-full min-w-0 h-full grid grid-cols-1 lg:grid-cols-2 gap-6 items-start overflow-hidden">
+            <div className="review-columns">
               {/* COLUMN 1 */}
-              <div className="flex flex-col h-full min-h-0 w-full panel rounded-xl p-4 overflow-hidden">
+              <div className="repository-panel" data-column="primary">
                 {/* Column 1 Repository Selector Header */}
-                <div className="flex items-center justify-between gap-3 pb-3 border-b border-gray-100 shrink-0 mb-3">
+                <div className="repository-heading">
                   <div className="flex items-center gap-2">
                     <GitPullRequest className="w-3.5 h-3.5 text-blue-500" />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                      Column 1
+                      Primary
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Repo:</span>
                     <select
+                      aria-label="Primary repository"
                       value={col1Repo}
                       onChange={(e) => handleCol1RepoChange(e.target.value)}
                       className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-blue-700 focus:outline-none focus:border-blue-400 cursor-pointer"
                     >
                       {monitoredRepos.map((repo) => (
-                        <option key={repo} value={repo} disabled={repo === col2Repo}>
+                        <option key={repo} value={repo} disabled={monitoredRepos.length > 1 && repo === col2Repo}>
                           {repo} {repo === col2Repo ? '(Selected in Col 2)' : ''}
                         </option>
                       ))}
@@ -849,7 +838,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Column 1 Scrollable Content */}
-                <div ref={col1ScrollRef} className="flex-1 overflow-y-auto pr-1 space-y-6">
+                <div ref={col1ScrollRef} className="repository-scroll">
                   {col1PRs.length === 0 ? (
                     <div className="p-8 text-center rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-400 italic">
                       No open PRs found for <strong className="text-gray-600">{col1Repo}</strong>.
@@ -864,7 +853,6 @@ export default function Dashboard() {
                           customId={`col1-${cardId}`}
                           prWithGates={item}
                           isSelected={effectiveActiveCol1PRId === cardId}
-                          columnTheme="blue"
                           isInProcess={isInProcess}
                           activeAgentInfo={activeAgentPRs[cardId]}
                           onClearActiveAgent={handleClearActiveAgent}
@@ -880,25 +868,26 @@ export default function Dashboard() {
               </div>
 
               {/* COLUMN 2 */}
-              <div className="flex flex-col h-full min-h-0 w-full panel rounded-xl p-4 overflow-hidden">
+              <div className="repository-panel" data-column="secondary">
                 {/* Column 2 Repository Selector Header */}
-                <div className="flex items-center justify-between gap-3 pb-3 border-b border-gray-100 shrink-0 mb-3">
+                <div className="repository-heading">
                   <div className="flex items-center gap-2">
                     <GitPullRequest className="w-3.5 h-3.5 text-purple-500" />
                     <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                      Column 2
+                      Secondary
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Repo:</span>
                     <select
+                      aria-label="Secondary repository"
                       value={col2Repo}
                       onChange={(e) => handleCol2RepoChange(e.target.value)}
                       className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-purple-700 focus:outline-none focus:border-purple-400 cursor-pointer"
                     >
                       {monitoredRepos.map((repo) => (
-                        <option key={repo} value={repo} disabled={repo === col1Repo}>
+                        <option key={repo} value={repo} disabled={monitoredRepos.length > 1 && repo === col1Repo}>
                           {repo} {repo === col1Repo ? '(Selected in Col 1)' : ''}
                         </option>
                       ))}
@@ -907,7 +896,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Column 2 Scrollable Content */}
-                <div ref={col2ScrollRef} className="flex-1 overflow-y-auto pr-1 space-y-6">
+                <div ref={col2ScrollRef} className="repository-scroll">
                   {col2PRs.length === 0 ? (
                     <div className="p-8 text-center rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-400 italic">
                       No open PRs found for <strong className="text-gray-600">{col2Repo}</strong>.
@@ -922,7 +911,6 @@ export default function Dashboard() {
                           customId={`col2-${cardId}`}
                           prWithGates={item}
                           isSelected={effectiveActiveCol2PRId === cardId}
-                          columnTheme="purple"
                           isInProcess={isInProcess}
                           activeAgentInfo={activeAgentPRs[cardId]}
                           onClearActiveAgent={handleClearActiveAgent}
@@ -940,6 +928,7 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+      </div>
 
       {/* Prompt Trigger Modal */}
       {activeGateTrigger && (

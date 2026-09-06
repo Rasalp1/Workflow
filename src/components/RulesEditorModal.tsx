@@ -1,406 +1,366 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { LogicalGateRule } from '@/types';
-import { X, Save, Plus, Trash2, Sliders, CheckSquare, Square, Code } from 'lucide-react';
+import { useState } from "react";
+import { Plus, Save, SlidersHorizontal, Trash2, Undo2 } from "lucide-react";
+import type { LogicalGateRule } from "@/types";
+import { GateIcon } from "./ui/GateIcon";
+import { Dialog } from "./ui/Dialog";
+import { Button } from "./ui/Button";
+import { Notice } from "./ui/Notice";
 
 interface RulesEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
   rules: LogicalGateRule[];
-  onSaveRules: (updatedRules: LogicalGateRule[]) => Promise<void>;
+  onSaveRules: (rules: LogicalGateRule[]) => Promise<void>;
   currentUser?: string | null;
 }
 
-export const RulesEditorModal: React.FC<RulesEditorModalProps> = ({
-  isOpen,
+const conditionLabels = [
+  ["prOwnedByCurrentUser", "Owned by you"],
+  ["prOwnedByNonCurrentUser", "Owned by someone else"],
+  ["hasNoComments", "No comments yet"],
+  ["hasCommentsByCurrentUser", "You have already commented"],
+  ["lastCommentNotCurrentUser", "Latest comment is from someone else"],
+  ["hasUnresolvedComments", "Contains review or discussion comments"],
+  ["hasMergeConflicts", "Has merge conflicts"],
+  ["checksFailing", "Status checks are failing"],
+  ["notReviewedByOthers", "Not already handled by other reviewers"],
+  ["isDraft", "Pull request is a draft"],
+] as const;
+
+export function RulesEditorModal({ isOpen, ...props }: RulesEditorModalProps) {
+  if (!isOpen) return null;
+  return <RulesForm {...props} />;
+}
+
+function RulesForm({
   onClose,
   rules,
   onSaveRules,
   currentUser,
-}) => {
-  const [mounted, setMounted] = useState(false);
-  const [prevRules, setPrevRules] = useState<LogicalGateRule[] | null>(null);
-  const [editableRules, setEditableRules] = useState<LogicalGateRule[]>([]);
-  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+}: Omit<RulesEditorModalProps, "isOpen">) {
+  const [editable, setEditable] = useState(() => structuredClone(rules));
+  const [selectedId, setSelectedId] = useState(rules[0]?.id);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [removed, setRemoved] = useState<{
+    rule: LogicalGateRule;
+    index: number;
+  } | null>(null);
+  const current =
+    editable.find((rule) => rule.id === selectedId) || editable[0];
+  const update = (patch: Partial<LogicalGateRule>) =>
+    setEditable((prev) =>
+      prev.map((rule) =>
+        rule.id === current?.id ? { ...rule, ...patch } : rule,
+      ),
+    );
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSaving) {
-        onClose();
-      }
+  function add() {
+    const rule: LogicalGateRule = {
+      id: `custom-rule-${crypto.randomUUID()}`,
+      name: "New rule",
+      description: "",
+      enabled: true,
+      buttonLabel: "Run agent",
+      buttonIcon: "Terminal",
+      buttonColor: "indigo",
+      actionType: "spawn_agent",
+      conditions: { lastCommentNotCurrentUser: true },
+      promptTemplate: "Review PR #{pr_number} ({pr_title}) in {repo_name}.",
     };
+    setEditable([...editable, rule]);
+    setSelectedId(rule.id);
+  }
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isSaving, onClose]);
-
-  if (rules && rules !== prevRules) {
-    setPrevRules(rules);
-    const cloned = JSON.parse(JSON.stringify(rules));
-    setEditableRules(cloned);
-    if (cloned.length > 0 && !selectedRuleId) {
-      setSelectedRuleId(cloned[0].id);
+  async function save() {
+    if (
+      editable.some((rule) => !rule.name.trim() || !rule.buttonLabel.trim())
+    ) {
+      setError("Every rule needs a name and a button label.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await onSaveRules(editable);
+      onClose();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not save your rules. Please try again.",
+      );
+    } finally {
+      setBusy(false);
     }
   }
 
-  if (!isOpen || !mounted) return null;
-
-  const currentRule = editableRules.find((r) => r.id === selectedRuleId) || editableRules[0];
-
-  const handleToggleRule = (id: string) => {
-    setEditableRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
-    );
-  };
-
-  const handleUpdateCurrentRule = (field: keyof LogicalGateRule, value: unknown) => {
-    if (!currentRule) return;
-    setEditableRules((prev) =>
-      prev.map((r) => (r.id === currentRule.id ? { ...r, [field]: value } : r))
-    );
-  };
-
-  const handleUpdateConditions = (field: string, value: unknown) => {
-    if (!currentRule) return;
-    setEditableRules((prev) =>
-      prev.map((r) =>
-        r.id === currentRule.id
-          ? {
-              ...r,
-              conditions: {
-                ...r.conditions,
-                [field]: value,
-              },
-            }
-          : r
-      )
-    );
-  };
-
-  const handleAddRule = () => {
-    const newId = `custom-rule-${Date.now()}`;
-    const newRule: LogicalGateRule = {
-      id: newId,
-      name: 'New Gate Rule',
-      description: 'Custom logical gate rule',
-      enabled: true,
-      buttonLabel: 'Run Agent Action',
-      buttonIcon: 'Terminal',
-      buttonColor: 'indigo',
-      conditions: {
-        lastCommentNotCurrentUser: true,
-      },
-      promptTemplate: 'Perform task for PR #{pr_number} ({pr_title}) in repository {repo_name}.',
-    };
-    setEditableRules((prev) => [...prev, newRule]);
-    setSelectedRuleId(newId);
-  };
-
-  const handleDeleteRule = (id: string) => {
-    setEditableRules((prev) => prev.filter((r) => r.id !== id));
-    if (selectedRuleId === id) {
-      const remaining = editableRules.filter((r) => r.id !== id);
-      setSelectedRuleId(remaining.length > 0 ? remaining[0].id : null);
-    }
-  };
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      await onSaveRules(editableRules);
-      onClose();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
-      onClick={(e) => {
-        e.stopPropagation();
-        if (e.target === e.currentTarget && !isSaving) onClose();
-      }}
+  return (
+    <Dialog
+      isOpen
+      onClose={onClose}
+      title="Logic gates"
+      description="Choose when an action appears and what it asks an agent to do."
+      icon={<SlidersHorizontal />}
+      size="wide"
+      busy={busy}
+      bodyClassName="rules-dialog-body"
+      footer={
+        <>
+          <span className="footer-hint">
+            {editable.filter((rule) => rule.enabled).length} of{" "}
+            {editable.length} rules enabled · Save to apply
+          </span>
+          <Button disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" busy={busy} onClick={save}>
+            {!busy && <Save size={16} />}
+            {busy ? "Saving rules…" : "Save rules"}
+          </Button>
+        </>
+      }
     >
-      <div
-        className="panel-raised rounded-xl w-full max-w-4xl border border-gray-200 shadow-2xl overflow-hidden flex flex-col h-[85vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Modal Header */}
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-purple-50 border border-purple-200 text-purple-600">
-              <Sliders className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900">Logical Gates & Prompt Rules</h3>
-              <p className="text-xs text-gray-500">
-                Define gate conditions for when action buttons appear on PR cards
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+      {error && (
+        <div className="rules-feedback">
+          <Notice tone="danger" title="Rules weren’t saved">
+            {error}
+          </Notice>
         </div>
-
-        {/* Modal Body: Left Sidebar + Right Form */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Rules List Sidebar */}
-          <div className="w-1/3 border-r border-gray-100 p-4 space-y-2 bg-gray-50/60 overflow-y-auto">
-            <div className="flex items-center justify-between pb-2 border-b border-gray-200 mb-1">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Rules ({editableRules.length})
-              </span>
-              <button
-                onClick={handleAddRule}
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add
-              </button>
-            </div>
-
-            {editableRules.map((rule) => (
-              <div
-                key={rule.id}
-                onClick={() => setSelectedRuleId(rule.id)}
-                className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
-                  selectedRuleId === rule.id
-                    ? 'bg-white border-blue-200 shadow-sm'
-                    : 'bg-white border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-gray-800">{rule.buttonLabel}</span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleRule(rule.id);
-                    }}
-                    className="text-gray-400 hover:text-blue-600"
-                  >
-                    {rule.enabled ? (
-                      <CheckSquare className="w-4 h-4 text-blue-500" />
-                    ) : (
-                      <Square className="w-4 h-4 text-gray-300" />
-                    )}
-                  </button>
-                </div>
-                <p className="text-[11px] text-gray-400 line-clamp-1 mt-0.5">{rule.name}</p>
-              </div>
-            ))}
+      )}
+      {removed && (
+        <div className="rules-undo">
+          <span>Removed “{removed.rule.name}”</span>
+          <Button
+            variant="quiet"
+            size="small"
+            disabled={busy}
+            onClick={() => {
+              const next = [...editable];
+              next.splice(removed.index, 0, removed.rule);
+              setEditable(next);
+              setSelectedId(removed.rule.id);
+              setRemoved(null);
+            }}
+          >
+            <Undo2 size={14} />
+            Undo
+          </Button>
+        </div>
+      )}
+      <div className="rules-layout">
+        <nav className="rules-navigation" aria-label="Rules">
+          <div className="field-heading">
+            <span className="field-label">
+              Your rules <span className="count-chip">{editable.length}</span>
+            </span>
+            <Button size="small" onClick={add} disabled={busy}>
+              <Plus size={14} />
+              Add
+            </Button>
           </div>
-
-          {/* Rule Details & Condition Editor */}
-          {currentRule && (
-            <div className="flex-1 p-5 space-y-5 overflow-y-auto bg-white">
-              <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-900">{currentRule.name}</h4>
-                  <p className="text-xs text-gray-400 font-mono">ID: {currentRule.id}</p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleDeleteRule(currentRule.id)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-200 text-xs font-medium transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Delete Rule
-                </button>
+          {editable.map((rule) => (
+            <button
+              type="button"
+              className="rule-navigation-item"
+              key={rule.id}
+              aria-current={current?.id === rule.id ? "true" : undefined}
+              onClick={() => setSelectedId(rule.id)}
+              disabled={busy}
+            >
+              <span className="rule-navigation-title">{rule.name}</span>
+              <span
+                className={`status-badge ${rule.enabled ? "status-badge--success" : "status-badge--neutral"}`}
+              >
+                {rule.enabled ? "Enabled" : "Disabled"}
+              </span>
+              <small>{rule.buttonLabel}</small>
+            </button>
+          ))}
+        </nav>
+        {current ? (
+          <fieldset className="rules-editor" disabled={busy}>
+            <div className="rule-editor-heading">
+              <div>
+                <p className="eyebrow">ACTION RULE</p>
+                <h3>{current.name}</h3>
               </div>
-
-              {/* General Properties */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-700">Button Label:</label>
-                  <input
-                    type="text"
-                    value={currentRule.buttonLabel}
-                    onChange={(e) => handleUpdateCurrentRule('buttonLabel', e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-800 focus:outline-none focus:border-blue-400 focus:bg-white transition-colors"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-gray-700">Button Color Theme:</label>
-                  <select
-                    value={currentRule.buttonColor || 'indigo'}
-                    onChange={(e) => handleUpdateCurrentRule('buttonColor', e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-800 focus:outline-none focus:border-blue-400 transition-colors"
-                  >
-                    <option value="indigo">Indigo / Blue</option>
-                    <option value="purple">Purple / Violet</option>
-                    <option value="rose">Rose / Red</option>
-                    <option value="amber">Amber / Yellow</option>
-                    <option value="emerald">Emerald / Green</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Conditions Checklist */}
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-gray-700">Gate Execution Conditions:</label>
-                <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-3 text-xs">
-                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={!!currentRule.conditions.prOwnedByCurrentUser}
-                      onChange={(e) =>
-                        handleUpdateConditions('prOwnedByCurrentUser', e.target.checked)
-                      }
-                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
-                    />
-                    <span>PR is owned by current user ({currentUser ? `@${currentUser}` : 'owner'})</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={!!currentRule.conditions.prOwnedByNonCurrentUser}
-                      onChange={(e) =>
-                        handleUpdateConditions('prOwnedByNonCurrentUser', e.target.checked)
-                      }
-                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
-                    />
-                    <span>PR is owned by someone other than current user</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={!!currentRule.conditions.hasNoComments}
-                      onChange={(e) =>
-                        handleUpdateConditions('hasNoComments', e.target.checked)
-                      }
-                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
-                    />
-                    <span>PR does not have any comments yet</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={!!currentRule.conditions.hasCommentsByCurrentUser}
-                      onChange={(e) =>
-                        handleUpdateConditions('hasCommentsByCurrentUser', e.target.checked)
-                      }
-                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
-                    />
-                    <span>PR has prior context/comment by current user ({currentUser ? `@${currentUser}` : 'owner'})</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={!!currentRule.conditions.lastCommentNotCurrentUser}
-                      onChange={(e) =>
-                        handleUpdateConditions('lastCommentNotCurrentUser', e.target.checked)
-                      }
-                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
-                    />
-                    <span>Last comment was left by someone other than the current user</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={!!currentRule.conditions.hasUnresolvedComments}
-                      onChange={(e) => handleUpdateConditions('hasUnresolvedComments', e.target.checked)}
-                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
-                    />
-                    <span>PR contains review or discussion comments</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={!!currentRule.conditions.checksFailing}
-                      onChange={(e) => handleUpdateConditions('checksFailing', e.target.checked)}
-                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
-                    />
-                    <span>CI/CD status checks are failing</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={!!currentRule.conditions.notReviewedByOthers}
-                      onChange={(e) => handleUpdateConditions('notReviewedByOthers', e.target.checked)}
-                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
-                    />
-                    <span>Not reviewed by others (excludes PRs where 2 other users commented in a row)</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={!!currentRule.conditions.isDraft}
-                      onChange={(e) => handleUpdateConditions('isDraft', e.target.checked)}
-                      className="rounded border-gray-300 bg-white text-blue-600 focus:ring-0"
-                    />
-                    <span>PR is currently a Draft (requires conversion before review)</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Prompt Template */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
-                    <Code className="w-3.5 h-3.5 text-purple-500" /> Prompt Template:
-                  </label>
-                  <span className="text-[10px] text-gray-400 font-mono">
-                    Vars: {'{pr_number}'}, {'{pr_title}'}, {'{repo_name}'}, {'{branch}'}, {'{last_comment_body}'}
-                  </span>
-                </div>
-
-                <textarea
-                  rows={7}
-                  value={currentRule.promptTemplate}
-                  onChange={(e) => handleUpdateCurrentRule('promptTemplate', e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-mono text-gray-800 focus:outline-none focus:border-purple-400 focus:bg-white transition-colors"
+              <Button
+                variant="danger-quiet"
+                size="small"
+                onClick={() => {
+                  setRemoved({
+                    rule: current,
+                    index: editable.indexOf(current),
+                  });
+                  setEditable(
+                    editable.filter((rule) => rule.id !== current.id),
+                  );
+                }}
+              >
+                <Trash2 size={15} />
+                Remove
+              </Button>
+            </div>
+            <label className="launch-setting" data-enabled={current.enabled}>
+              <span>
+                <strong>Enable this rule</strong>
+                <small>
+                  {current.enabled
+                    ? "This action appears when all selected conditions match."
+                    : "This rule is saved but its action will not appear."}
+                </small>
+              </span>
+              <input
+                className="ui-switch"
+                type="checkbox"
+                role="switch"
+                checked={current.enabled}
+                onChange={(event) => update({ enabled: event.target.checked })}
+              />
+            </label>
+            <div className="form-grid">
+              <div className="field-group">
+                <label className="field-label" htmlFor="rule-name">
+                  Rule name
+                </label>
+                <input
+                  id="rule-name"
+                  className="ui-input"
+                  value={current.name}
+                  onChange={(event) => update({ name: event.target.value })}
                 />
               </div>
+              <div className="field-group">
+                <label className="field-label" htmlFor="rule-label">
+                  Button label
+                </label>
+                <input
+                  id="rule-label"
+                  className="ui-input"
+                  value={current.buttonLabel}
+                  onChange={(event) =>
+                    update({ buttonLabel: event.target.value })
+                  }
+                />
+              </div>
+              <div className="field-group">
+                <label className="field-label" htmlFor="rule-action">
+                  Action
+                </label>
+                <select
+                  id="rule-action"
+                  className="ui-input"
+                  value={current.actionType || "spawn_agent"}
+                  onChange={(event) =>
+                    update({
+                      actionType: event.target
+                        .value as LogicalGateRule["actionType"],
+                    })
+                  }
+                >
+                  <option value="spawn_agent">Launch agent</option>
+                  <option value="post_comment">Post GitHub comment</option>
+                  <option value="undraft_pr">Mark ready for review</option>
+                </select>
+              </div>
+              <div className="field-group">
+                <label className="field-label" htmlFor="rule-color">
+                  Action color
+                </label>
+                <select
+                  id="rule-color"
+                  className="ui-input"
+                  value={current.buttonColor || "indigo"}
+                  onChange={(event) =>
+                    update({
+                      buttonColor: event.target
+                        .value as LogicalGateRule["buttonColor"],
+                    })
+                  }
+                >
+                  <option value="blue">Blue</option>
+                  <option value="indigo">Indigo</option>
+                  <option value="purple">Purple</option>
+                  <option value="emerald">Green</option>
+                  <option value="amber">Amber</option>
+                  <option value="rose">Red</option>
+                </select>
+              </div>
             </div>
-          )}
-        </div>
-
-        {/* Modal Footer */}
-        <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-          >
-            Cancel
-          </button>
-
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-all disabled:opacity-50"
-          >
-            <Save className="w-4 h-4" />
-            <span>{isSaving ? 'Saving Rules...' : 'Save Rule Engine Changes'}</span>
-          </button>
-        </div>
+            <div className="rule-preview">
+              <span className="field-help">Button preview</span>
+              <span
+                className="gate-button"
+                data-tone={current.buttonColor || "indigo"}
+              >
+                <GateIcon name={current.buttonIcon} />
+                {current.buttonLabel || "Button label"}
+              </span>
+            </div>
+            <section className="field-group">
+              <h4 className="section-heading">Match all conditions</h4>
+              <p className="field-help">
+                Conditions are combined. “You” refers to{" "}
+                {currentUser ? `@${currentUser}` : "the signed-in GitHub user"}.
+              </p>
+              <div className="condition-list">
+                {conditionLabels.map(([key, label]) => (
+                  <label key={key} className="condition-row">
+                    <input
+                      type="checkbox"
+                      checked={!!current.conditions[key]}
+                      onChange={(event) =>
+                        update({
+                          conditions: {
+                            ...current.conditions,
+                            [key]: event.target.checked,
+                          },
+                        })
+                      }
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+            <div className="field-group">
+              <label className="field-label" htmlFor="rule-template">
+                Prompt or comment template
+              </label>
+              <textarea
+                id="rule-template"
+                className="ui-input prompt-editor"
+                rows={7}
+                value={current.promptTemplate}
+                onChange={(event) =>
+                  update({ promptTemplate: event.target.value })
+                }
+              />
+              <p className="field-help">
+                Available variables:{" "}
+                <code>
+                  {
+                    "{pr_number}, {pr_title}, {repo_name}, {branch}, {last_comment_body}"
+                  }
+                </code>
+              </p>
+            </div>
+          </fieldset>
+        ) : (
+          <div className="rules-empty">
+            <SlidersHorizontal size={32} />
+            <h3>No rules yet</h3>
+            <p>Add a rule to create an action for your review workflow.</p>
+            <Button variant="primary" onClick={add} disabled={busy}>
+              <Plus size={16} />
+              Create your first rule
+            </Button>
+          </div>
+        )}
       </div>
-    </div>,
-    document.body
+    </Dialog>
   );
-};
+}
