@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { loadConfig, saveConfig } from '@/lib/storage';
 import { validateOrigin } from '@/lib/security';
+import { clearGitHubCache } from '@/lib/github';
 
 export async function GET() {
   const config = await loadConfig();
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
     };
 
     await saveConfig(merged);
+    clearGitHubCache();
 
     const safeConfig = {
       ...merged,

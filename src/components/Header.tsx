@@ -8,12 +8,12 @@ import {
   FolderX,
   Search,
   X,
-  Layers,
   ArrowUpRight,
   Cpu,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { ClearAgentsModal } from "@/components/ClearAgentsModal";
+import { WorkflowIcon } from "@/components/ui/WorkflowIcon";
 
 interface HeaderProps {
   onRefresh: () => void;
@@ -61,7 +61,7 @@ interface HeaderProps {
 export const WorkspaceBrand = () => (
   <div className="brand-lockup">
     <span className="brand-icon">
-      <Layers size={23} strokeWidth={1.7} />
+      <WorkflowIcon size={24} strokeWidth={1.5} />
     </span>
     <div>
       <div className="brand-name">Workflow</div>
