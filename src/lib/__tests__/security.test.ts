@@ -1,8 +1,18 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { sanitizeBranchName, validateLocalPath, validateOrigin } from '../security.ts';
+import { sanitizeBranchName, stripNonBmpChars, validateLocalPath, validateOrigin } from '../security.ts';
 
 describe('Security Utilities', () => {
+  describe('stripNonBmpChars', () => {
+    it('should strip emojis and supplementary non-BMP characters', () => {
+      // 🔴 (U+1F534) and 🟡 (U+1F538) are non-BMP (> U+FFFF, surrogate pairs), ✅ (U+2705) is BMP
+      assert.strictEqual(stripNonBmpChars('Review 🔴 with 🟡 and ✅!'), 'Review  with  and ✅!');
+      // 🚀 (U+1F680) is non-BMP, ✨ (U+2728) is BMP
+      assert.strictEqual(stripNonBmpChars('Rocket 🚀 Sparkles ✨'), 'Rocket  Sparkles ✨');
+      assert.strictEqual(stripNonBmpChars('No emojis here 123.'), 'No emojis here 123.');
+      assert.strictEqual(stripNonBmpChars(''), '');
+    });
+  });
   describe('sanitizeBranchName', () => {
     it('should accept valid git branch names', () => {
       assert.strictEqual(sanitizeBranchName('main'), 'main');

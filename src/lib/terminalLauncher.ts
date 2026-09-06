@@ -5,7 +5,7 @@ import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { AgentType } from '@/types';
-import { sanitizeBranchName, validateLocalPath } from '@/lib/security';
+import { sanitizeBranchName, stripNonBmpChars, validateLocalPath } from '@/lib/security';
 
 const execAsync = promisify(exec);
 
@@ -86,7 +86,9 @@ export async function openTerminalInAntigravity({
     ? `cd "${targetDir}" && ${cliCommand}`
     : `cd "${targetDir}"`;
 
-  const safeCommand = fullCommand.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const safeCommand = stripNonBmpChars(fullCommand)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
 
   const appleScript = `
 set repoName to "${repoName}"
@@ -186,8 +188,32 @@ export async function spawnAgentInTerminal({
       targetDir = await ensureWorktree({ repoPath: cleanRepoPath, branchName });
     }
 
-    const escapedPrompt = prompt.replace(/"/g, '\\"').replace(/`/g, '\\`').replace(/\$/g, '\\$');
-    const cliCommand = `${agent} "${escapedPrompt}"`;
+    const promptId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const promptFile = join(tmpdir(), `workflow-prompt-${promptId}.txt`);
+    const runnerScript = join(tmpdir(), `workflow-runner-${promptId}.sh`);
+
+    await writeFile(promptFile, prompt, 'utf8');
+
+    const runnerContent = `#!/usr/bin/env bash
+PROMPT_FILE=${JSON.stringify(promptFile)}
+TARGET_DIR=${JSON.stringify(targetDir)}
+AGENT=${JSON.stringify(agent)}
+
+cd "$TARGET_DIR" || exit 1
+PROMPT="$(cat "$PROMPT_FILE")"
+rm -f "$PROMPT_FILE" "$0"
+exec "$AGENT" "$PROMPT"
+`;
+
+    await writeFile(runnerScript, runnerContent, { mode: 0o755, encoding: 'utf8' });
+
+    // Safety fallback cleanup in case terminal launch fails or script is not executed
+    setTimeout(() => {
+      unlink(promptFile).catch(() => {});
+      unlink(runnerScript).catch(() => {});
+    }, 60000);
+
+    const cliCommand = `bash "${runnerScript}"`;
 
     await openTerminalInAntigravity({
       cleanRepoPath,

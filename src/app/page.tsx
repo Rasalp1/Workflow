@@ -869,6 +869,7 @@ export default function Dashboard() {
                           activeAgentInfo={activeAgentPRs[cardId]}
                           onClearActiveAgent={handleClearActiveAgent}
                           onTriggerGate={handleTriggerGate}
+                          currentUser={currentUser}
                           onMergePR={handleMergePR}
                           onOpenWorktree={handleOpenWorktree}
                         />
@@ -926,6 +927,7 @@ export default function Dashboard() {
                           activeAgentInfo={activeAgentPRs[cardId]}
                           onClearActiveAgent={handleClearActiveAgent}
                           onTriggerGate={handleTriggerGate}
+                          currentUser={currentUser}
                           onMergePR={handleMergePR}
                           onOpenWorktree={handleOpenWorktree}
                         />

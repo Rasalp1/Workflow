@@ -35,6 +35,7 @@ interface PRCardProps {
   isSelected?: boolean;
   columnTheme?: 'blue' | 'purple';
   customId?: string;
+  currentUser?: string | null;
   isInProcess?: boolean;
   activeAgentInfo?: ActiveAgentInfo | null;
   onClearActiveAgent?: (cardId: string) => void;
@@ -48,6 +49,7 @@ export const PRCard: React.FC<PRCardProps> = ({
   isSelected,
   columnTheme = 'blue',
   customId,
+  currentUser,
   isInProcess,
   activeAgentInfo,
   onClearActiveAgent,
@@ -56,6 +58,71 @@ export const PRCard: React.FC<PRCardProps> = ({
   const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
   const elementId = customId || cardId;
   const passedGates = evaluatedGates.filter((g) => g.passed);
+
+  const addressIssuesGate = evaluatedGates.find((g) => g.rule.id === 'address-issues') || {
+    rule: {
+      id: 'address-issues',
+      name: 'Address Review Issues',
+      description: 'PR owned by user with latest comment from someone else.',
+      enabled: true,
+      buttonLabel: 'Address Issues',
+      buttonIcon: 'Wrench',
+      buttonColor: 'purple',
+      actionType: 'spawn_agent',
+      conditions: {},
+      promptTemplate: `Address review issues for PR #{pr_number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
+    },
+    passed: false,
+    generatedPrompt: `Address review issues for PR #${pr.number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
+    targetAgent: 'codex',
+  };
+  const hasPassedAddressIssues = passedGates.some((g) => g.rule.id === 'address-issues');
+
+  const addressLatestGate = evaluatedGates.find((g) => g.rule.id === 'address-latest-comment') || {
+    rule: {
+      id: 'address-latest-comment',
+      name: 'Address Recent Comment',
+      description: 'Address only the very recentmost comment/review on this PR instead of full history.',
+      enabled: true,
+      buttonLabel: 'Address Latest',
+      buttonIcon: 'Wrench',
+      buttonColor: 'purple',
+      actionType: 'spawn_agent',
+      conditions: {},
+      promptTemplate: `Address review feedback on PR #{pr_number} ({pr_title}) based ONLY on the recentmost comment by @{last_comment_author}:\n\n"{last_comment_body}"\n\nFocus specifically and solely on addressing the issues and feedback raised in this most recent comment, without getting distracted by previous conversation history. Check the issues raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to address the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a clear comment to the PR explaining what you did and why.`,
+    },
+    passed: false,
+    generatedPrompt: `Address review feedback on PR #${pr.number} (${pr.title}) based ONLY on the recentmost comment by @${pr.last_comment?.user.login || 'reviewer'}:\n\n"${pr.last_comment?.body || 'No recent comment'}"\n\nFocus specifically and solely on addressing the issues and feedback raised in this most recent comment, without getting distracted by previous conversation history. Check the issues raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to address the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a clear comment to the PR explaining what you did and why.`,
+    targetAgent: 'codex',
+  };
+  const hasPassedAddressLatest = passedGates.some((g) => g.rule.id === 'address-latest-comment');
+
+  const reviewWithContextGate = evaluatedGates.find((g) => g.rule.id === 'review-with-context');
+  const hasPassedReviewWithContext = passedGates.some((g) => g.rule.id === 'review-with-context');
+
+  const reviewLatestGate = evaluatedGates.find((g) => g.rule.id === 'review-latest-comment') || {
+    rule: {
+      id: 'review-latest-comment',
+      name: 'Review Recent Comment',
+      description: 'Review PR considering only the author’s very recentmost comment/update instead of full history.',
+      enabled: true,
+      buttonLabel: 'Review Latest',
+      buttonIcon: 'Eye',
+      buttonColor: 'emerald',
+      actionType: 'spawn_agent',
+      conditions: {},
+      promptTemplate: `Review PR #{pr_number} ({pr_title}) against branch {base_branch}, focusing specifically on the author’s recentmost response by @{last_comment_author}:\n\n"{last_comment_body}"\n\nWe’re the reviewer. Instead of re-evaluating the full historical comment backlog, focus specifically on this latest update and comment. Has the author addressed the specific points raised in this recentmost feedback? Are the claimed fixes in place in the code, or are they pushing back rightfully? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
+    },
+    passed: false,
+    generatedPrompt: `Review PR #${pr.number} (${pr.title}) against branch ${pr.base.ref}, focusing specifically on the author’s recentmost response by @${pr.last_comment?.user.login || 'author'}:\n\n"${pr.last_comment?.body || 'No recent comment'}"\n\nWe’re the reviewer. Instead of re-evaluating the full historical comment backlog, focus specifically on this latest update and comment. Has the author addressed the specific points raised in this recentmost feedback? Are the claimed fixes in place in the code, or are they pushing back rightfully? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
+    targetAgent: 'codex',
+  };
+  const hasPassedReviewLatest = passedGates.some((g) => g.rule.id === 'review-latest-comment');
+
+  const hasComments = Boolean((pr.comments && pr.comments.length > 0) || pr.last_comment);
+  const isOwner = currentUser
+    ? pr.user.login.toLowerCase() === currentUser.toLowerCase()
+    : evaluatedGates.some((g) => g.rule.conditions?.prOwnedByCurrentUser && g.passed);
 
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
@@ -290,6 +357,16 @@ export const PRCard: React.FC<PRCardProps> = ({
               )}
               @{pr.user.login}
             </span>
+
+            {pr.created_at && (
+              <span
+                className="text-xs text-gray-500 flex items-center gap-1 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-200"
+                title={`Created ${new Date(pr.created_at).toLocaleString()}`}
+              >
+                <Clock className="w-3.5 h-3.5 text-gray-400" />
+                <span>{formatRelativeTime(pr.created_at)}</span>
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -560,13 +637,77 @@ export const PRCard: React.FC<PRCardProps> = ({
             >
               {getGateIcon(gate.rule.buttonIcon)}
               <span>{gate.rule.buttonLabel}</span>
-              {gate.rule.actionType !== 'undraft_pr' && (
+              {(gate.rule.actionType === 'spawn_agent' || !gate.rule.actionType) && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
                   {gate.targetAgent}
                 </span>
               )}
             </button>
           ))}
+
+          {!hasPassedAddressIssues && addressIssuesGate && addressIssuesGate.rule.enabled !== false && !pr.is_draft && (
+            <button
+              onClick={() => onTriggerGate(prWithGates, addressIssuesGate)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200 hover:border-purple-300 cursor-pointer shadow-2xs"
+              title="Address review issues with AI agent (considering complete history)"
+            >
+              <Wrench className="w-3.5 h-3.5 text-purple-600" />
+              <span>{addressIssuesGate.rule.buttonLabel || 'Address Issues'}</span>
+              {(addressIssuesGate.rule.actionType === 'spawn_agent' || !addressIssuesGate.rule.actionType) && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                  {addressIssuesGate.targetAgent}
+                </span>
+              )}
+            </button>
+          )}
+
+          {!hasPassedAddressLatest && addressLatestGate && addressLatestGate.rule.enabled !== false && !pr.is_draft && hasComments && (
+            <button
+              onClick={() => onTriggerGate(prWithGates, addressLatestGate)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200 hover:border-purple-300 cursor-pointer shadow-2xs"
+              title="Address only the very recentmost comment with AI agent"
+            >
+              <Wrench className="w-3.5 h-3.5 text-purple-600" />
+              <span>{addressLatestGate.rule.buttonLabel || 'Address Latest'}</span>
+              {(addressLatestGate.rule.actionType === 'spawn_agent' || !addressLatestGate.rule.actionType) && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                  {addressLatestGate.targetAgent}
+                </span>
+              )}
+            </button>
+          )}
+
+          {!hasPassedReviewWithContext && reviewWithContextGate && reviewWithContextGate.rule.enabled !== false && !pr.is_draft && !isOwner && hasComments && (
+            <button
+              onClick={() => onTriggerGate(prWithGates, reviewWithContextGate)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 hover:border-emerald-300 cursor-pointer shadow-2xs"
+              title="Review PR with AI agent (considering complete history)"
+            >
+              <Eye className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{reviewWithContextGate.rule.buttonLabel || 'Review with context'}</span>
+              {(reviewWithContextGate.rule.actionType === 'spawn_agent' || !reviewWithContextGate.rule.actionType) && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                  {reviewWithContextGate.targetAgent}
+                </span>
+              )}
+            </button>
+          )}
+
+          {!hasPassedReviewLatest && reviewLatestGate && reviewLatestGate.rule.enabled !== false && !pr.is_draft && !isOwner && hasComments && (
+            <button
+              onClick={() => onTriggerGate(prWithGates, reviewLatestGate)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 hover:border-emerald-300 cursor-pointer shadow-2xs"
+              title="Review PR considering only the author's very recentmost comment/update"
+            >
+              <Eye className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{reviewLatestGate.rule.buttonLabel || 'Review Latest'}</span>
+              {(reviewLatestGate.rule.actionType === 'spawn_agent' || !reviewLatestGate.rule.actionType) && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                  {reviewLatestGate.targetAgent}
+                </span>
+              )}
+            </button>
+          )}
 
           {!pr.is_draft && !pr.has_merge_conflicts && (
             <button

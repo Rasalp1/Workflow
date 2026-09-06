@@ -67,3 +67,13 @@ export function validateOrigin(request: Request): void {
     }
   }
 }
+
+/**
+ * Strips non-BMP characters (such as emojis or characters above U+FFFF)
+ * which cannot be handled by AppleScript System Events keystrokes without terminal/process corruption.
+ */
+export function stripNonBmpChars(input: string): string {
+  if (!input || typeof input !== 'string') return '';
+  return input.replace(/[^\u0000-\uFFFF]/gu, '');
+}
+
