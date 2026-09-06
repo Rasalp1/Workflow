@@ -9,7 +9,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test --experimental-strip-types src/lib/__tests__/*.test.ts"
+    "test": "node --test --experimental-strip-types src/lib/__tests__/*.test.ts",
+    "test:e2e": "playwright test",
+    "build:menubar": "bash scripts/build-menubar.sh"
   },
   "dependencies": {
     "lucide-react": "^1.31.0",
@@ -21,12 +23,14 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "prettier": "^3.9.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

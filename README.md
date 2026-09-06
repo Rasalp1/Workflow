@@ -154,6 +154,15 @@ npm run dev
 ```
 Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
+### Browser checks
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+The suite builds the app, starts it on port 3100, and checks desktop and phone layouts with isolated sample data. All API requests are intercepted, including writes, so the tests do not change GitHub PRs, saved settings, or local worktrees. Screenshots for the workspace and every modal are saved in `test-results/`; failing tests also retain a Playwright trace.
+
 ---
 
 ## ⚙️ Environment Configuration

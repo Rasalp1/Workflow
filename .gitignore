@@ -44,5 +44,10 @@ next-env.d.ts
 
 # local runtime data
 /.workflow-data
+/scripts/workflow-menubar
 
 
+
+# Browser test artifacts
+/test-results/
+/playwright-report/
