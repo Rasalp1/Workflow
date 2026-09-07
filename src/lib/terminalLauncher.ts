@@ -161,15 +161,50 @@ end tell
     await execAsync(`osascript "${tmpScript}"`);
   } catch (scriptErr: unknown) {
     const msg = scriptErr instanceof Error ? scriptErr.message : String(scriptErr);
-    if (msg.includes('1002') || msg.includes('not allowed to send keystrokes')) {
-      await execAsync(
-        `open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`
-      ).catch(() => {});
-      throw new Error(`Permission required: Please grant Accessibility access to your terminal in System Settings, then try again.`);
-    }
-    throw scriptErr;
+    console.warn(`Antigravity IDE terminal UI scripting failed (${msg}). Falling back to Terminal.app...`);
+    await openInTerminalApp({ cleanRepoPath, targetDir, cliCommand });
   } finally {
     await unlink(tmpScript).catch(() => {});
+  }
+}
+
+/**
+ * Opens and executes the command directly in macOS Terminal.app without requiring
+ * System Events UI scripting or Accessibility permissions.
+ */
+export async function openInTerminalApp({
+  cleanRepoPath,
+  targetDir,
+  cliCommand,
+}: {
+  cleanRepoPath?: string;
+  targetDir: string;
+  cliCommand?: string;
+}): Promise<void> {
+  const ideCli = '/Applications/Antigravity IDE.app/Contents/Resources/app/bin/antigravity-ide';
+  if (cleanRepoPath) {
+    await execAsync(`"${ideCli}" --reuse-window "${cleanRepoPath}"`).catch(() => {});
+  }
+
+  const fullCommand = cliCommand
+    ? `cd "${targetDir}" && ${cliCommand}`
+    : `cd "${targetDir}"`;
+
+  const scriptContent = `
+tell application "Terminal"
+  activate
+  do script ${JSON.stringify(fullCommand)}
+end tell
+`;
+
+  try {
+    await execAsync(`osascript -e ${JSON.stringify(scriptContent)}`);
+  } catch {
+    // Ultimate fallback using open -a Terminal with an executable .command file
+    const runnerFile = join(tmpdir(), `workflow-run-${Date.now()}.command`);
+    await writeFile(runnerFile, `#!/usr/bin/env bash\n${fullCommand}\n`, { mode: 0o755, encoding: 'utf8' });
+    await execAsync(`open -a Terminal "${runnerFile}"`);
+    setTimeout(() => unlink(runnerFile).catch(() => {}), 60000);
   }
 }
 
