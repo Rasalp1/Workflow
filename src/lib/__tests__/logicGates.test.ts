@@ -311,7 +311,7 @@ describe('Logic Gates Evaluator', () => {
       assert.strictEqual(hasTwoConsecutiveCommentsByOthers(nonUserPRWithUserComment, 'alice'), false);
     });
 
-    it('returns false when 2 distinct other users commented in a row since our user last commented, even if not the final 2 comments', () => {
+    it('returns true when our user previously commented and the PR author addressed another reviewer\'s feedback', () => {
       const prWithExchangeSinceUser: PullRequest = {
         ...dummyPR,
         user: { login: 'bob', avatar_url: '', html_url: '' }, // owned by bob
@@ -364,11 +364,60 @@ describe('Logic Gates Evaluator', () => {
         },
       };
 
-      // Since Alice's last comment at id: 1, comments are [charlie, bob, bob].
-      // Pair (charlie, bob) represents 2 comments in a row by 2 other users since Alice's last comment.
-      // So this PR was reviewed by charlie and is not awaiting alice's comment.
-      assert.strictEqual(isPrAwaitingComment(prWithExchangeSinceUser, 'alice'), false);
-      assert.strictEqual(hasTwoConsecutiveCommentsByOthers(prWithExchangeSinceUser, 'alice'), true);
+      // Since Alice participated earlier and Bob (the author) commented last addressing reviews,
+      // this PR IS relevant and awaiting Alice's follow-up review.
+      assert.strictEqual(isPrAwaitingComment(prWithExchangeSinceUser, 'alice'), true);
+      assert.strictEqual(hasTwoConsecutiveCommentsByOthers(prWithExchangeSinceUser, 'alice'), false);
+    });
+
+    it('returns false when another reviewer commented last after our user and author has not replied', () => {
+      const prAnotherReviewerLast: PullRequest = {
+        ...dummyPR,
+        user: { login: 'bob', avatar_url: '', html_url: '' }, // owned by bob
+        comments: [
+          {
+            id: 1,
+            user: { login: 'alice', avatar_url: '', html_url: '' }, // our user commented initially
+            body: 'Initial note',
+            created_at: '2026-08-12T09:00:00Z',
+            updated_at: '2026-08-12T09:00:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+          {
+            id: 2,
+            user: { login: 'bob', avatar_url: '', html_url: '' }, // bob answered alice
+            body: 'Addressed alice',
+            created_at: '2026-08-12T10:00:00Z',
+            updated_at: '2026-08-12T10:00:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+          {
+            id: 3,
+            user: { login: 'charlie', avatar_url: '', html_url: '' }, // charlie reviewed next
+            body: 'Charlie requests changes',
+            created_at: '2026-08-12T11:00:00Z',
+            updated_at: '2026-08-12T11:00:00Z',
+            html_url: '',
+            is_review_comment: true,
+          },
+        ],
+        last_comment: {
+          id: 3,
+          user: { login: 'charlie', avatar_url: '', html_url: '' },
+          body: 'Charlie requests changes',
+          created_at: '2026-08-12T11:00:00Z',
+          updated_at: '2026-08-12T11:00:00Z',
+          html_url: '',
+          is_review_comment: true,
+        },
+      };
+
+      // Since Charlie commented last, the PR is awaiting Bob (author) to address Charlie's comments,
+      // not Alice.
+      assert.strictEqual(isPrAwaitingComment(prAnotherReviewerLast, 'alice'), false);
+      assert.strictEqual(hasTwoConsecutiveCommentsByOthers(prAnotherReviewerLast, 'alice'), true);
     });
 
     it('returns true when an exchange between others happened before our user last commented, but only 1 response since our user comment', () => {

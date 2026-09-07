@@ -26,18 +26,23 @@ struct PullRequestItem: Decodable {
     let comments_count: Int?
     let has_merge_conflicts: Bool?
     let needs_attention: Bool?
+    let local_path: String?
 }
 
 struct GateRule: Decodable {
     let id: String?
     let name: String?
     let buttonLabel: String?
+    let buttonIcon: String?
+    let buttonColor: String?
     let actionType: String?
 }
 
 struct EvaluatedGate: Decodable {
     let rule: GateRule?
     let passed: Bool?
+    let generatedPrompt: String?
+    let targetAgent: String?
 }
 
 struct PRWithGatesItem: Decodable {
@@ -525,36 +530,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     
     private func createWorkflowMenubarIcon() -> NSImage {
-        let svgString = """
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18">
+        let svgStr = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="72" height="72">
           <path d="M0 0h24v24H0z" fill="none" />
-          <g fill="none" stroke="#000000" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <g fill="none" stroke="#000000" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 4c0-1.655.345-2 2-2h4c1.655 0 2 .345 2 2s-.345 2-2 2H5c-1.655 0-2-.345-2-2Zm10 9c0-1.655.345-2 2-2h4c1.655 0 2 .345 2 2s-.345 2-2 2h-4c-1.655 0-2-.345-2-2Zm-9 7c0-1.655.345-2 2-2h4c1.655 0 2 .345 2 2s-.345 2-2 2H6c-1.655 0-2-.345-2-2Z" />
             <path d="M17 11c0-.465 0-.697-.038-.89a2 2 0 0 0-1.572-1.572c-.193-.038-.425-.038-.89-.038h-5c-.465 0-.697 0-.89-.038A2 2 0 0 1 7.038 6.89C7 6.697 7 6.465 7 6m10 9v1c0 1.886 0 2.828-.586 3.414S14.886 20 13 20h-1" />
           </g>
         </svg>
         """
-        if let data = svgString.data(using: .utf8),
-           let svgImg = NSImage(data: data) {
-            let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-                svgImg.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
-                return true
-            }
-            img.isTemplate = true
-            return img
+        guard let data = svgStr.data(using: .utf8),
+              let svgImg = NSImage(data: data) else {
+            return NSImage(size: NSSize(width: 18, height: 18))
         }
         
-        // Fallback
-        if #available(macOS 11.0, *) {
-            let symbolConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-            if let image = NSImage(systemSymbolName: "arrow.triangle.pull", accessibilityDescription: "Workflow")?.withSymbolConfiguration(symbolConfig) {
-                image.isTemplate = true
-                return image
-            }
+        let icon = NSImage(size: NSSize(width: 18, height: 18))
+        
+        // 1x representation (18x18 px, 72 dpi)
+        if let rep1x = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 18, pixelsHigh: 18, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) {
+            rep1x.size = NSSize(width: 18, height: 18)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep1x)
+            NSColor.clear.set()
+            NSRect(x: 0, y: 0, width: 18, height: 18).fill()
+            svgImg.draw(in: NSRect(x: 1, y: 1, width: 16, height: 16), from: NSRect(x: 0, y: 0, width: 72, height: 72), operation: .sourceOver, fraction: 1.0)
+            NSGraphicsContext.restoreGraphicsState()
+            icon.addRepresentation(rep1x)
         }
-        let fallback = NSImage(size: NSSize(width: 18, height: 18))
-        fallback.isTemplate = true
-        return fallback
+        
+        // 2x Retina representation (36x36 px, 144 dpi)
+        if let rep2x = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 36, pixelsHigh: 36, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) {
+            rep2x.size = NSSize(width: 18, height: 18)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep2x)
+            NSColor.clear.set()
+            NSRect(x: 0, y: 0, width: 18, height: 18).fill()
+            svgImg.draw(in: NSRect(x: 1, y: 1, width: 16, height: 16), from: NSRect(x: 0, y: 0, width: 72, height: 72), operation: .sourceOver, fraction: 1.0)
+            NSGraphicsContext.restoreGraphicsState()
+            icon.addRepresentation(rep2x)
+        }
+        
+        icon.isTemplate = true
+        return icon
     }
     
     private func setupStatusItem() {
@@ -866,6 +883,228 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.update()
     }
     
+    // MARK: - Notifications & Agent Triggering
+    
+    private func showNotification(title: String, message: String) {
+        let notification = NSUserNotification()
+        notification.title = title
+        notification.informativeText = message
+        notification.soundName = NSUserNotificationDefaultSoundName
+        NSUserNotificationCenter.default.deliver(notification)
+        
+        let cleanTitle = title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let cleanMsg = message.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "display notification \"\(cleanMsg)\" with title \"\(cleanTitle)\""
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+        }
+    }
+    
+    private func getActionableGates(for item: PRWithGatesItem, currentUser: String) -> [EvaluatedGate] {
+        var result: [EvaluatedGate] = []
+        var addedIds = Set<String>()
+        
+        let pr = item.pr
+        let isDraft = pr.is_draft == true
+        let hasComments = (pr.comments_count ?? 0) > 0
+        let isOwner = !currentUser.isEmpty && (pr.user?.login?.lowercased() == currentUser.lowercased())
+        let gates = item.evaluatedGates ?? []
+        
+        // 1. Add all gates that evaluated to passed == true
+        for gate in gates where gate.passed == true {
+            if let id = gate.rule?.id, !addedIds.contains(id) {
+                result.append(gate)
+                addedIds.insert(id)
+            }
+        }
+        
+        guard !isDraft else { return result }
+        
+        // 2. Add standard Review / Address gates matching the web app (PRCard.tsx)
+        if isOwner {
+            // Address gates for PR author
+            if let gate = gates.first(where: { $0.rule?.id == "address-issues" }),
+               let id = gate.rule?.id, !addedIds.contains(id) {
+                result.append(gate)
+                addedIds.insert(id)
+            }
+            if hasComments,
+               let gate = gates.first(where: { $0.rule?.id == "address-latest-comment" }),
+               let id = gate.rule?.id, !addedIds.contains(id) {
+                result.append(gate)
+                addedIds.insert(id)
+            }
+        } else {
+            // Review gates for reviewers
+            if hasComments {
+                if let gate = gates.first(where: { $0.rule?.id == "review-with-context" }),
+                   let id = gate.rule?.id, !addedIds.contains(id) {
+                    result.append(gate)
+                    addedIds.insert(id)
+                }
+                if let gate = gates.first(where: { $0.rule?.id == "review-latest-comment" }),
+                   let id = gate.rule?.id, !addedIds.contains(id) {
+                    result.append(gate)
+                    addedIds.insert(id)
+                }
+            } else {
+                if let gate = gates.first(where: { $0.rule?.id == "code-review" }),
+                   let id = gate.rule?.id, !addedIds.contains(id) {
+                    result.append(gate)
+                    addedIds.insert(id)
+                }
+            }
+            
+            // In PRCard.tsx, "Address Issues" is also available as a fallback button
+            if let gate = gates.first(where: { $0.rule?.id == "address-issues" }),
+               let id = gate.rule?.id, !addedIds.contains(id) {
+                result.append(gate)
+                addedIds.insert(id)
+            }
+        }
+        
+        return result
+    }
+    
+    private func triggerGateAction(pr: PullRequestItem, gate: EvaluatedGate) {
+        let actionType = gate.rule?.actionType ?? "spawn_agent"
+        let repoFullName = pr.repo_full_name ?? latestData?.monitoredRepos?.first ?? ""
+        let agent = gate.targetAgent ?? "codex"
+        let rawLabel = gate.rule?.buttonLabel ?? gate.rule?.name ?? "Action"
+        
+        if actionType == "spawn_agent" {
+            guard let url = URL(string: "http://localhost:\(port)/api/agent/spawn") else { return }
+            
+            let prompt: String
+            if let p = gate.generatedPrompt, !p.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                prompt = p
+            } else {
+                let baseBranch = pr.base?.ref ?? "main"
+                let cleanTitle = pr.title.replacingOccurrences(of: "\n", with: " ")
+                let ruleId = gate.rule?.id ?? ""
+                if ruleId.contains("review") {
+                    prompt = "Perform extensive and deep code review on this branch against base branch \(baseBranch) for PR #\(pr.number) (\(cleanTitle)). Analyze security, performance, code quality, architecture, and testing. Provide constructive, actionable feedback."
+                } else {
+                    prompt = "Address review issues for PR #\(pr.number) (\(cleanTitle)). Look at the complete comment history on the PR, investigate the feedback, make the necessary changes, verify with tests, and push the branch."
+                }
+            }
+            
+            let payload: [String: Any] = [
+                "repoFullName": repoFullName,
+                "localPath": pr.local_path ?? "",
+                "branchName": pr.head?.ref ?? "",
+                "agent": agent,
+                "prompt": prompt,
+                "cardId": "pr-card-\(repoFullName)-\(pr.number)"
+            ]
+            
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("http://localhost:\(port)", forHTTPHeaderField: "Origin")
+            request.httpBody = jsonData
+            request.timeoutInterval = 30.0
+            
+            showNotification(
+                title: "Workflow",
+                message: "Launching \(agent) agent for \(rawLabel) on PR #\(pr.number)..."
+            )
+            
+            URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    if let error = error {
+                        self.showNotification(
+                            title: "Workflow Launch Failed",
+                            message: "Network error: \(error.localizedDescription)"
+                        )
+                        return
+                    }
+                    
+                    var errorMessage: String?
+                    var isSuccess = false
+                    
+                    if let data = data,
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        if let err = json["error"] as? String {
+                            errorMessage = err
+                        } else if let success = json["success"] as? Bool, success {
+                            isSuccess = true
+                        }
+                    }
+                    
+                    if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200, isSuccess {
+                        self.showNotification(
+                            title: "Workflow Agent Started",
+                            message: "Launched \(agent) agent for \(rawLabel) in Antigravity IDE terminal (PR #\(pr.number))!"
+                        )
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            self.fetchPRs()
+                        }
+                    } else {
+                        let msg = errorMessage ?? "Failed to launch agent on server"
+                        self.showNotification(
+                            title: "Workflow Launch Failed",
+                            message: msg
+                        )
+                    }
+                }
+            }.resume()
+            
+        } else if actionType == "undraft_pr" {
+            guard let url = URL(string: "http://localhost:\(port)/api/prs/undraft") else { return }
+            let payload: [String: Any] = [
+                "repoFullName": repoFullName,
+                "prNumber": pr.number
+            ]
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("http://localhost:\(port)", forHTTPHeaderField: "Origin")
+            request.httpBody = jsonData
+            
+            showNotification(title: "Workflow", message: "Marking PR #\(pr.number) as ready for review...")
+            
+            URLSession.shared.dataTask(with: request) { [weak self] _, response, _ in
+                DispatchQueue.main.async {
+                    if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                        self?.showNotification(title: "Workflow", message: "PR #\(pr.number) marked ready for review!")
+                        self?.fetchPRs()
+                    }
+                }
+            }.resume()
+            
+        } else if actionType == "post_comment" {
+            guard let url = URL(string: "http://localhost:\(port)/api/prs/comment") else { return }
+            let payload: [String: Any] = [
+                "repoFullName": repoFullName,
+                "prNumber": pr.number,
+                "commentBody": gate.generatedPrompt ?? "Please update PR #\(pr.number)"
+            ]
+            guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("http://localhost:\(port)", forHTTPHeaderField: "Origin")
+            request.httpBody = jsonData
+            
+            showNotification(title: "Workflow", message: "Posting comment to PR #\(pr.number)...")
+            
+            URLSession.shared.dataTask(with: request) { [weak self] _, response, _ in
+                DispatchQueue.main.async {
+                    if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                        self?.showNotification(title: "Workflow", message: "Comment posted to PR #\(pr.number)!")
+                        self?.fetchPRs()
+                    }
+                }
+            }.resume()
+        }
+    }
+    
     // MARK: - Menu Item Creators
     
     private func createSectionHeader(title: String, dotColor: NSColor, count: Int) -> NSMenuItem {
@@ -976,6 +1215,55 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Rich Submenu for details
         let prSubmenu = NSMenu()
         
+        // 1. Agent Actions Section (at top of submenu for quick access)
+        let actionableGates = getActionableGates(for: item, currentUser: latestData?.currentUser ?? "")
+        if !actionableGates.isEmpty {
+            let actionsHeader = NSMenuItem(title: "AGENT ACTIONS", action: nil, keyEquivalent: "")
+            actionsHeader.isEnabled = false
+            if let font = NSFont.systemFont(ofSize: 10, weight: .bold) as NSFont? {
+                actionsHeader.attributedTitle = NSAttributedString(
+                    string: "AGENT ACTIONS",
+                    attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor]
+                )
+            }
+            prSubmenu.addItem(actionsHeader)
+            
+            for gate in actionableGates {
+                let rawLabel = gate.rule?.buttonLabel ?? gate.rule?.name ?? "Action"
+                let agent = gate.targetAgent ?? "codex"
+                let isAgentAction = (gate.rule?.actionType == nil || gate.rule?.actionType == "spawn_agent")
+                let displayTitle = isAgentAction ? "⚡ \(rawLabel) (\(agent))" : "⚡ \(rawLabel)"
+                
+                let gateItem = createMenuItem(title: displayTitle, keyEquivalent: "") { [weak self] in
+                    self?.triggerGateAction(pr: pr, gate: gate)
+                }
+                
+                if #available(macOS 11.0, *) {
+                    let ruleId = gate.rule?.id ?? ""
+                    let iconName: String
+                    if ruleId.contains("review") {
+                        iconName = "eye.fill"
+                    } else if ruleId.contains("address") {
+                        iconName = "wrench.and.screwdriver.fill"
+                    } else if ruleId.contains("rebase") {
+                        iconName = "arrow.triangle.branch"
+                    } else if isAgentAction {
+                        iconName = "bolt.fill"
+                    } else {
+                        iconName = "play.fill"
+                    }
+                    let symbolConfig = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
+                    if let img = NSImage(systemSymbolName: iconName, accessibilityDescription: rawLabel)?.withSymbolConfiguration(symbolConfig) {
+                        gateItem.image = img
+                    }
+                }
+                
+                prSubmenu.addItem(gateItem)
+            }
+            
+            prSubmenu.addItem(NSMenuItem.separator())
+        }
+        
         // Open in Dashboard
         if let dashUrl = URL(string: dashboardUrlStr) {
             let openDashItem = createMenuItem(title: "Open in Dashboard", keyEquivalent: "") {
@@ -1023,25 +1311,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let cItem = NSMenuItem(title: "Status: Merge Conflicts ⚠️", action: nil, keyEquivalent: "")
             cItem.isEnabled = false
             prSubmenu.addItem(cItem)
-        }
-        
-        // Evaluated Gates
-        let passedGates = (item.evaluatedGates ?? []).filter { $0.passed == true }
-        if !passedGates.isEmpty {
-            prSubmenu.addItem(NSMenuItem.separator())
-            let gateHeader = NSMenuItem(title: "Active Gates:", action: nil, keyEquivalent: "")
-            gateHeader.isEnabled = false
-            prSubmenu.addItem(gateHeader)
-            
-            for gate in passedGates {
-                let label = gate.rule?.buttonLabel ?? gate.rule?.name ?? "Action"
-                let gateItem = createMenuItem(title: "  ⚡ \(label)", keyEquivalent: "") {
-                    if let dashUrl = URL(string: dashboardUrlStr) {
-                        NSWorkspace.shared.open(dashUrl)
-                    }
-                }
-                prSubmenu.addItem(gateItem)
-            }
         }
         
         menuItem.submenu = prSubmenu
