@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchAuthenticatedUser, getRepoPullRequests, getRateLimitStatus, GitHubRateLimitError } from '@/lib/github';
-import { evaluateGateRule } from '@/lib/logicGates';
+import { evaluateGateRule, isPrAwaitingComment } from '@/lib/logicGates';
 import { loadConfig, loadRules } from '@/lib/storage';
 import { PRWithGates } from '@/types';
 
@@ -83,9 +83,13 @@ export async function GET(request: Request) {
             evaluateGateRule(rule, pr, currentUser, config.defaultAgent)
           );
 
+          const needsAttention = isPrAwaitingComment(pr, currentUser);
+          pr.needs_attention = needsAttention;
+
           allPRsWithGates.push({
             pr,
             evaluatedGates,
+            needsAttention,
           });
         }
       } catch (err: unknown) {
@@ -123,12 +127,17 @@ export async function GET(request: Request) {
       );
     }
 
+    const awaitingCommentCount = allPRsWithGates.filter((item) => item.needsAttention).length;
+    const theirsToHandleCount = allPRsWithGates.length - awaitingCommentCount;
+
     return NextResponse.json(
       {
         success: true,
         currentUser,
         prsWithGates: allPRsWithGates,
         monitoredRepos: config.monitoredRepos,
+        awaitingCommentCount,
+        theirsToHandleCount,
         warning: errors.length > 0 ? errors.join('; ') : undefined,
       },
       {

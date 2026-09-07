@@ -62,6 +62,7 @@ export interface PullRequest {
   has_merge_conflicts?: boolean;
   mergeable_state?: string;
   local_path?: string;
+  needs_attention?: boolean;
 }
 
 export interface LogicalGateRule {
@@ -111,4 +112,5 @@ export interface EvaluatedGateResult {
 export interface PRWithGates {
   pr: PullRequest;
   evaluatedGates: EvaluatedGateResult[];
+  needsAttention?: boolean;
 }
