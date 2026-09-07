@@ -97,61 +97,68 @@ set targetDir to "${targetDir}"
 set ideCli to "${ideCli}"
 set cmdString to "${safeCommand}"
 
--- Ensure the app is running
+-- Ensure Antigravity IDE is running and activated
 tell application "Antigravity IDE"
   activate
 end tell
-delay 0.5
+delay 0.3
 
--- Find the window whose title contains the repo folder name
-set targetWindow to missing value
 tell application "System Events"
-  tell process "Antigravity IDE"
-    repeat with w in every window
-      if name of w contains repoName then
-        set targetWindow to w
-        exit repeat
-      end if
+  set ideProcess to missing value
+  if exists (process "Antigravity IDE") then
+    set ideProcess to process "Antigravity IDE"
+  else
+    repeat with p in (every process whose bundle identifier is "com.google.antigravity-ide")
+      set ideProcess to p
+      exit repeat
     end repeat
-  end tell
-end tell
+  end if
 
--- If no matching window, open the repo in a new window and wait for it to load
-if targetWindow is missing value then
-  do shell script quoted form of ideCli & " --new-window " & quoted form of repoPath
-  delay 4
-  tell application "System Events"
-    tell process "Antigravity IDE"
+  if ideProcess is not missing value then
+    tell ideProcess
+      set targetWindow to missing value
       repeat with w in every window
         if name of w contains repoName then
           set targetWindow to w
           exit repeat
         end if
       end repeat
-    end tell
-  end tell
-end if
 
--- Raise the matched window and open a terminal, then type command
-tell application "System Events"
-  tell process "Antigravity IDE"
-    if targetWindow is not missing value then
-      perform action "AXRaise" of targetWindow
-    end if
-    set frontmost to true
-    delay 0.3
-    -- Open command palette (Cmd+Shift+P)
-    key code 35 using {command down, shift down}
-    delay 0.6
-    -- Create a new terminal via command ID
-    keystroke "workbench.action.terminal.new"
-    delay 0.4
-    key code 36
-    delay 1.2
-    -- Type the command into the fresh terminal
-    keystroke cmdString
-    key code 36
-  end tell
+      -- If no window title matches the repo name, use the frontmost open window
+      if targetWindow is missing value and (count of windows) > 0 then
+        set targetWindow to window 1
+      end if
+
+      -- If no windows are open, launch window for repo
+      if (count of windows) = 0 then
+        do shell script quoted form of ideCli & " " & quoted form of repoPath
+        delay 2.5
+        if (count of windows) > 0 then
+          set targetWindow to window 1
+        end if
+      end if
+
+      if targetWindow is not missing value then
+        perform action "AXRaise" of targetWindow
+      end if
+      set frontmost to true
+      delay 0.2
+
+      -- Open command palette (Cmd+Shift+P)
+      key code 35 using {command down, shift down}
+      delay 0.5
+
+      -- Create a new terminal via command ID
+      keystroke "workbench.action.terminal.new"
+      delay 0.3
+      key code 36
+      delay 0.8
+
+      -- Type the command into the fresh terminal
+      keystroke cmdString
+      key code 36
+    end tell
+  end if
 end tell
 `;
 
@@ -161,50 +168,25 @@ end tell
     await execAsync(`osascript "${tmpScript}"`);
   } catch (scriptErr: unknown) {
     const msg = scriptErr instanceof Error ? scriptErr.message : String(scriptErr);
-    console.warn(`Antigravity IDE terminal UI scripting failed (${msg}). Falling back to Terminal.app...`);
-    await openInTerminalApp({ cleanRepoPath, targetDir, cliCommand });
+    if (
+      msg.includes('1002') ||
+      msg.includes('not allowed to send keystrokes') ||
+      msg.includes('-1743') ||
+      msg.includes('Not authorised') ||
+      msg.includes('Not authorized') ||
+      msg.includes('-25211') ||
+      msg.includes('assistive access')
+    ) {
+      await execAsync(
+        `open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`
+      ).catch(() => {});
+      throw new Error(
+        `Permission required: Please grant Accessibility and Automation access to your terminal / IDE in macOS System Settings -> Privacy & Security, then try again.`
+      );
+    }
+    throw scriptErr;
   } finally {
     await unlink(tmpScript).catch(() => {});
-  }
-}
-
-/**
- * Opens and executes the command directly in macOS Terminal.app without requiring
- * System Events UI scripting or Accessibility permissions.
- */
-export async function openInTerminalApp({
-  cleanRepoPath,
-  targetDir,
-  cliCommand,
-}: {
-  cleanRepoPath?: string;
-  targetDir: string;
-  cliCommand?: string;
-}): Promise<void> {
-  const ideCli = '/Applications/Antigravity IDE.app/Contents/Resources/app/bin/antigravity-ide';
-  if (cleanRepoPath) {
-    await execAsync(`"${ideCli}" --reuse-window "${cleanRepoPath}"`).catch(() => {});
-  }
-
-  const fullCommand = cliCommand
-    ? `cd "${targetDir}" && ${cliCommand}`
-    : `cd "${targetDir}"`;
-
-  const scriptContent = `
-tell application "Terminal"
-  activate
-  do script ${JSON.stringify(fullCommand)}
-end tell
-`;
-
-  try {
-    await execAsync(`osascript -e ${JSON.stringify(scriptContent)}`);
-  } catch {
-    // Ultimate fallback using open -a Terminal with an executable .command file
-    const runnerFile = join(tmpdir(), `workflow-run-${Date.now()}.command`);
-    await writeFile(runnerFile, `#!/usr/bin/env bash\n${fullCommand}\n`, { mode: 0o755, encoding: 'utf8' });
-    await execAsync(`open -a Terminal "${runnerFile}"`);
-    setTimeout(() => unlink(runnerFile).catch(() => {}), 60000);
   }
 }
 
@@ -341,7 +323,7 @@ export async function closeAllWorktreesInTerminal({
           if (!wt) continue;
           try {
             await execAsync(`git -C "${repo}" worktree remove --force "${wt}"`);
-          } catch (removeErr) {
+          } catch {
             if (existsSync(wt)) {
               await execAsync(`rm -rf "${wt}"`).catch(() => {});
             }

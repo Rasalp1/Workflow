@@ -1017,7 +1017,6 @@
 .review-sidebar .sidebar-pr.is-selected {
   border-color: #a7c1ef;
   background: #e7efff;
-  box-shadow: inset 3px 0 var(--accent);
 }
 .sidebar-attention {
   color: #91580c;
@@ -1194,7 +1193,6 @@
 .review-sidebar .sidebar-pr.is-selected[data-column="secondary"] {
   border-color: #c6b3e2;
   background: #f1eafb;
-  box-shadow: inset 3px 0 #8056b8;
 }
 .repository-panel[data-column="secondary"] .pr-detail.is-selected {
   border-color: #bca6d9;

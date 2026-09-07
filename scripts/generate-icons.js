@@ -196,9 +196,9 @@ const getMenubarHtml = (size) => `<!DOCTYPE html>
 </body>
 </html>`;
 
-async function buildIcns(page, getHtmlFunc, outIcnsPath) {
-  const iconsetDir = path.join('/tmp', `temp_${Date.now()}_icon.iconset`);
-  fs.mkdirSync(iconsetDir, { recursive: true });
+async function buildAssetsAndIcns(page, getHtmlFunc, outBaseName) {
+  const xcassetsDir = path.join('/tmp', `${outBaseName}.xcassets`);
+  fs.mkdirSync(xcassetsDir, { recursive: true });
 
   const specs = [
     { name: 'icon_16x16.png', size: 16 },
@@ -213,15 +213,56 @@ async function buildIcns(page, getHtmlFunc, outIcnsPath) {
     { name: 'icon_512x512@2x.png', size: 1024 },
   ];
 
+  const contentsJson = {
+    images: [
+      { idiom: 'mac', size: '16x16', scale: '1x', filename: 'icon_16x16.png' },
+      { idiom: 'mac', size: '16x16', scale: '2x', filename: 'icon_16x16@2x.png' },
+      { idiom: 'mac', size: '32x32', scale: '1x', filename: 'icon_32x32.png' },
+      { idiom: 'mac', size: '32x32', scale: '2x', filename: 'icon_32x32@2x.png' },
+      { idiom: 'mac', size: '128x128', scale: '1x', filename: 'icon_128x128.png' },
+      { idiom: 'mac', size: '128x128', scale: '2x', filename: 'icon_128x128@2x.png' },
+      { idiom: 'mac', size: '256x256', scale: '1x', filename: 'icon_256x256.png' },
+      { idiom: 'mac', size: '256x256', scale: '2x', filename: 'icon_256x256@2x.png' },
+      { idiom: 'mac', size: '512x512', scale: '1x', filename: 'icon_512x512.png' },
+      { idiom: 'mac', size: '512x512', scale: '2x', filename: 'icon_512x512@2x.png' },
+    ],
+    info: { author: 'xcode', version: 1 },
+  };
+
+  const iconsetDir = path.join('/tmp', `${outBaseName}.iconset`);
+  fs.mkdirSync(iconsetDir, { recursive: true });
+
+  const appIconDir = path.join(xcassetsDir, 'AppIcon.appiconset');
+  const appletIconDir = path.join(xcassetsDir, 'applet.appiconset');
+  fs.mkdirSync(appIconDir, { recursive: true });
+  fs.mkdirSync(appletIconDir, { recursive: true });
+  fs.writeFileSync(path.join(appIconDir, 'Contents.json'), JSON.stringify(contentsJson, null, 2));
+  fs.writeFileSync(path.join(appletIconDir, 'Contents.json'), JSON.stringify(contentsJson, null, 2));
+
   for (const s of specs) {
     await page.setViewportSize({ width: s.size, height: s.size });
     await page.setContent(getHtmlFunc(s.size));
     const buf = await page.screenshot({ omitBackground: true });
     fs.writeFileSync(path.join(iconsetDir, s.name), buf);
+    fs.writeFileSync(path.join(appIconDir, s.name), buf);
+    fs.writeFileSync(path.join(appletIconDir, s.name), buf);
   }
 
+  // 1. Build .icns using iconutil
+  const outIcnsPath = path.join('/tmp', `${outBaseName}.icns`);
   execSync(`iconutil -c icns "${iconsetDir}" -o "${outIcnsPath}"`);
   fs.rmSync(iconsetDir, { recursive: true, force: true });
+
+  // 2. Build Assets.car using actool
+  const actoolOutDir = path.join('/tmp', `${outBaseName}_actool_out`);
+  fs.mkdirSync(actoolOutDir, { recursive: true });
+  execSync(
+    `xcrun actool "${xcassetsDir}" --compile "${actoolOutDir}" --platform macosx --minimum-deployment-target 11.0 --app-icon AppIcon --app-icon applet --output-partial-info-plist "/tmp/${outBaseName}_partial.plist"`
+  );
+  const outCarPath = path.join(actoolOutDir, 'Assets.car');
+  fs.rmSync(xcassetsDir, { recursive: true, force: true });
+
+  return { icnsPath: outIcnsPath, carPath: outCarPath };
 }
 
 async function run() {
@@ -265,64 +306,138 @@ async function run() {
   await page.setContent(getMenubarHtml(36));
   fs.writeFileSync(path.join(projectRoot, 'public', 'menubar-icon@2x.png'), await page.screenshot({ omitBackground: true }));
 
-  // 5. Build .icns files and update Desktop Apps
+  // 5. Build native macOS .icns and Assets.car bundles
+  console.log('Compiling native macOS Assets.car and .icns bundles via actool & iconutil...');
+  const startAssets = await buildAssetsAndIcns(page, getStartHtml, 'workflow_start');
+  const stopAssets = await buildAssetsAndIcns(page, getStopHtml, 'workflow_stop');
+
   const homeDir = process.env.HOME || '/Users/rasmusalpsten';
-  const desktopStartApp = path.join(homeDir, 'Desktop', 'Workflow Server.app');
-  const desktopStopApp = path.join(homeDir, 'Desktop', 'Stop Workflow Server.app');
-
-  const startIcnsPath = path.join('/tmp', 'workflow_start.icns');
-  const stopIcnsPath = path.join('/tmp', 'workflow_stop.icns');
-  const startPngPath = path.join('/tmp', 'workflow_start_1024.png');
-  const stopPngPath = path.join('/tmp', 'workflow_stop_1024.png');
-
-  fs.writeFileSync(startPngPath, icon1024Buffer);
-
-  await page.setViewportSize({ width: 1024, height: 1024 });
-  await page.setContent(getStopHtml(1024));
-  const stop1024Buffer = await page.screenshot({ omitBackground: true });
-  fs.writeFileSync(stopPngPath, stop1024Buffer);
-
-  console.log('Generating macOS .icns bundles for Desktop apps...');
-  await buildIcns(page, getStartHtml, startIcnsPath);
-  await buildIcns(page, getStopHtml, stopIcnsPath);
-
-  // Update Desktop Apps
-  if (fs.existsSync(desktopStartApp)) {
-    console.log('Updating Workflow Server.app icon...');
-    const targetIcns = path.join(desktopStartApp, 'Contents', 'Resources', 'applet.icns');
-    fs.copyFileSync(startIcnsPath, targetIcns);
-  }
-
-  if (fs.existsSync(desktopStopApp)) {
-    console.log('Updating Stop Workflow Server.app icon...');
-    const targetIcns = path.join(desktopStopApp, 'Contents', 'Resources', 'applet.icns');
-    fs.copyFileSync(stopIcnsPath, targetIcns);
-  }
-
-  // Update Finder custom icon attribute using Cocoa NSWorkspace
-  console.log('Applying custom Finder icons via Cocoa...');
-  const swiftScript = `
-import Cocoa
-
-func setAppIcon(pngPath: String, appPath: String) {
-    guard let img = NSImage(contentsOfFile: pngPath) else {
-        print("Failed to load: \\(pngPath)")
-        return
+  const isAppBundle = (p) => {
+    try {
+      return fs.existsSync(p) && fs.statSync(p).isDirectory() && fs.existsSync(path.join(p, 'Contents'));
+    } catch {
+      return false;
     }
-    let success = NSWorkspace.shared.setIcon(img, forFile: appPath, options: [])
-    print("Set icon for \\(appPath): \\(success)")
-}
+  };
 
-setAppIcon(pngPath: "${startPngPath}", appPath: "${desktopStartApp}")
-setAppIcon(pngPath: "${stopPngPath}", appPath: "${desktopStopApp}")
-`;
-  fs.writeFileSync('/tmp/set_icons.swift', swiftScript);
-  execSync('swift /tmp/set_icons.swift', { stdio: 'inherit' });
+  const startAppCandidates = [
+    path.join(homeDir, 'Desktop', 'Workflow.app'),
+    path.join(homeDir, 'Desktop', 'Workflow Server.app'),
+    path.join(homeDir, 'Applications', 'Workflow.app'),
+    '/Applications/Workflow.app',
+  ].filter(isAppBundle);
 
-  // Touch and refresh Finder
+  const stopAppCandidates = [
+    path.join(homeDir, 'Desktop', 'Stop Workflow Server.app'),
+    path.join(homeDir, 'Desktop', 'Stop Workflow.app'),
+    path.join(homeDir, 'Applications', 'Stop Workflow Server.app'),
+    '/Applications/Stop Workflow Server.app',
+  ].filter(isAppBundle);
+
+  function updateAppBundle(appPath, assets, bundleId, appName) {
+    console.log(`Updating app bundle at ${appPath}...`);
+    // Remove any stale Icon\r or resource fork detritus
+    const iconFile = path.join(appPath, 'Icon\r');
+    if (fs.existsSync(iconFile)) {
+      try {
+        fs.unlinkSync(iconFile);
+      } catch {}
+    }
+    try {
+      execSync(`xattr -cr "${appPath}"`);
+    } catch {}
+
+    const resourcesDir = path.join(appPath, 'Contents', 'Resources');
+    fs.mkdirSync(resourcesDir, { recursive: true });
+    fs.copyFileSync(assets.icnsPath, path.join(resourcesDir, 'applet.icns'));
+    fs.copyFileSync(assets.carPath, path.join(resourcesDir, 'Assets.car'));
+
+    // Patch Info.plist
+    const plistPath = path.join(appPath, 'Contents', 'Info.plist');
+    if (fs.existsSync(plistPath)) {
+      let content = fs.readFileSync(plistPath, 'utf8');
+      if (bundleId && !content.includes('CFBundleIdentifier')) {
+        content = content.replace(
+          '<key>CFBundleInfoDictionaryVersion</key>',
+          `<key>CFBundleIdentifier</key>\n\t<string>${bundleId}</string>\n\t<key>CFBundleInfoDictionaryVersion</key>`
+        );
+      }
+      if (!content.includes('CFBundleIconName')) {
+        content = content.replace(
+          '<key>CFBundleIconFile</key>\n\t<string>applet</string>',
+          '<key>CFBundleIconFile</key>\n\t<string>applet</string>\n\t<key>CFBundleIconName</key>\n\t<string>applet</string>'
+        );
+      }
+      fs.writeFileSync(plistPath, content, 'utf8');
+    }
+
+    // Ad-hoc sign so LaunchServices and macOS gatekeeper consider the bundle valid
+    try {
+      execSync(`codesign --force --deep --sign - "${appPath}"`);
+      console.log(`Code signed ${appPath}: valid`);
+    } catch (e) {
+      console.warn(`Codesign error for ${appPath}:`, e.message);
+    }
+  }
+
+  for (const p of startAppCandidates) {
+    updateAppBundle(p, startAssets, 'com.workflow.app', 'Workflow');
+  }
+
+  for (const p of stopAppCandidates) {
+    updateAppBundle(p, stopAssets, 'com.workflow.stop-server', 'Stop Workflow Server');
+  }
+
+  // Update Dock plist to ensure tile-type and bundle-identifier match
+  console.log('Ensuring Dock tile-data is configured as application tile...');
   try {
-    execSync(`touch "${desktopStartApp}" "${desktopStopApp}"`);
+    const dockXml = execSync('defaults export com.apple.dock -', { encoding: 'utf8' });
+    if (dockXml.includes('Workflow.app')) {
+      const pyScript = `
+import plistlib, sys
+dock = plistlib.loads(sys.stdin.buffer.read())
+changed = False
+for item in dock.get('persistent-apps', []):
+    tile = item.get('tile-data', {})
+    url = tile.get('file-data', {}).get('_CFURLString', '')
+    if 'Workflow.app' in url:
+        tile['bundle-identifier'] = 'com.workflow.app'
+        tile['file-type'] = 1
+        changed = True
+if changed:
+    sys.stdout.buffer.write(plistlib.dumps(dock, fmt=plistlib.FMT_XML))
+else:
+    sys.stdout.buffer.write(sys.stdin.buffer.read())
+`;
+      const modifiedDockXml = execSync(`python3 -c "${pyScript}"`, { input: dockXml, encoding: 'utf8' });
+      execSync('defaults import com.apple.dock -', { input: modifiedDockXml });
+    }
+  } catch (err) {
+    console.warn('Dock plist update warning:', err.message);
+  }
+
+  // Clear system icon caches and register with LaunchServices
+  console.log('Flushing macOS icon caches and resetting Dock...');
+  try {
+    execSync('rm -f /var/folders/*/*/*/com.apple.dock.iconcache 2>/dev/null || true');
+    execSync('rm -rf /var/folders/*/*/*/com.apple.iconservices* 2>/dev/null || true');
+    execSync('qlmanage -r cache 2>/dev/null || true');
+  } catch {}
+
+  const lsregister =
+    '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
+  for (const target of [...startAppCandidates, ...stopAppCandidates]) {
+    try {
+      execSync(`touch "${target}"`);
+      if (fs.existsSync(lsregister)) {
+        execSync(`"${lsregister}" -f "${target}"`);
+      }
+    } catch {}
+  }
+
+  try {
     execSync('killall Finder 2>/dev/null || true');
+    execSync('killall Dock 2>/dev/null || true');
   } catch {}
 
   await browser.close();

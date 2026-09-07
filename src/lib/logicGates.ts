@@ -164,6 +164,10 @@ export function formatPromptTemplate(template: string, pr: PullRequest): string 
  * Checks if there are 2 comments in a row by 2 distinct users (neither of which is the current user)
  * since the last comment made by the current user (or across all comments if the current user never commented).
  * This indicates that the PR is actively being reviewed or discussed by other individuals.
+ *
+ * NOTE: If the current user previously participated/commented on this PR and the latest comment
+ * is from the PR author, it indicates that the author has addressed the review feedback
+ * (including any intervening reviews by others), so the PR is once again awaiting the current user's review.
  */
 export function hasTwoConsecutiveCommentsByOthers(
   pr: PullRequest,
@@ -181,6 +185,15 @@ export function hasTwoConsecutiveCommentsByOthers(
       lastUserCommentIndex = i;
       break;
     }
+  }
+
+  // If the current user previously participated on this PR, and the latest comment
+  // is from the PR author, the author has addressed feedback.
+  // The PR is therefore relevant again for the current user's follow-up review.
+  const prAuthor = pr.user.login.toLowerCase();
+  const lastCommentUser = (pr.last_comment?.user?.login ?? comments[comments.length - 1]?.user?.login)?.toLowerCase();
+  if (lastUserCommentIndex >= 0 && lastCommentUser === prAuthor) {
+    return false;
   }
 
   // Only examine comments posted after our user's latest comment (or all comments if user never commented)

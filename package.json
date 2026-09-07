@@ -11,7 +11,8 @@
     "lint": "eslint",
     "test": "node --test --experimental-strip-types src/lib/__tests__/*.test.ts",
     "test:e2e": "playwright test",
-    "build:menubar": "bash scripts/build-menubar.sh"
+    "build:menubar": "bash scripts/build-menubar.sh",
+    "build:icons": "node scripts/generate-icons.js"
   },
   "dependencies": {
     "lucide-react": "^1.31.0",
