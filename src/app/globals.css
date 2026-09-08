@@ -1413,9 +1413,17 @@
   background: var(--accent-light);
   border-color: var(--accent-border);
 }
+.queue-link.is-selected {
+  background: #e7efff;
+  border-color: #a7c1ef;
+}
+.queue-link.is-selected[data-column="secondary"] {
+  background: #f1eafb;
+  border-color: #c6b3e2;
+}
 .queue-pr-number {
   flex-shrink: 0;
-  color: var(--accent);
+  color: #6b45c8;
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
@@ -1487,6 +1495,7 @@
   line-height: 1.2;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
+  color: #6b45c8;
 }
 .sidebar-draft {
   padding: 1px 5px;
