@@ -7,6 +7,20 @@ import { openTerminalInAntigravity } from '../terminalLauncher.ts';
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * `osacompile` only exists on macOS, so the AppleScript syntax check is skipped
+ * elsewhere (CI runs on Linux). The content assertions below run everywhere.
+ */
+const canCompileAppleScript = await (async () => {
+  if (process.platform !== 'darwin') return false;
+  try {
+    await execFileAsync('osacompile', ['-h']);
+    return true;
+  } catch (error) {
+    return (error as { code?: string }).code !== 'ENOENT';
+  }
+})();
+
 describe('Antigravity integrated terminal launcher', () => {
   it('focuses the matching repository window and pastes into its integrated terminal', async () => {
     const commands: string[] = [];
@@ -18,9 +32,11 @@ describe('Antigravity integrated terminal launcher', () => {
         const scriptPath = command.match(/^osascript ["'](.+)["']$/)?.[1];
         assert.ok(scriptPath);
         generatedScript = await readFile(scriptPath, 'utf8');
-        const compiledPath = `${scriptPath}.compiled`;
-        await execFileAsync('osacompile', ['-o', compiledPath, scriptPath]);
-        await unlink(compiledPath);
+        if (canCompileAppleScript) {
+          const compiledPath = `${scriptPath}.compiled`;
+          await execFileAsync('osacompile', ['-o', compiledPath, scriptPath]);
+          await unlink(compiledPath);
+        }
       }
       return undefined;
     };
