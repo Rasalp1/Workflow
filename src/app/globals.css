@@ -1377,6 +1377,166 @@
   padding-bottom: 12px;
 }
 
+
+/* Review-queue dropdown: dense rows anchored on the PR number and branch. */
+.queue-popover {
+  padding: 10px;
+  width: min(392px, calc(100vw - 40px));
+}
+.queue-popover-heading {
+  margin-bottom: 6px;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.queue-repo {
+  margin: 12px 0 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.queue-popover > div:first-of-type .queue-repo {
+  margin-top: 4px;
+}
+.queue-link {
+  gap: 7px;
+  min-height: 27px;
+  padding: 3px 7px;
+  margin-bottom: 1px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 11px;
+}
+.queue-link:hover {
+  background: var(--accent-light);
+  border-color: var(--accent-border);
+}
+.queue-pr-number {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.queue-branch {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.queue-conflict {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: 1px solid #eeb4be;
+  border-radius: 4px;
+  background: #ffe6ea;
+  color: #a2273c;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.queue-agent {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid #c1c7ef;
+  border-radius: 4px;
+  background: #e4e7ff;
+  color: #4651b5;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.queue-agent[data-agent="claude"] {
+  border-color: #eac6b1;
+  background: #ffeadf;
+  color: #994b29;
+}
+.queue-link .queue-agent svg {
+  color: currentColor;
+}
+.queue-link > svg:last-child {
+  color: var(--text-tertiary);
+  opacity: 0;
+}
+.queue-link:hover > svg:last-child {
+  opacity: 1;
+}
+
+/* Sidebar: legible PR numbers and status markers at a glance. */
+.sidebar-pr-meta {
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--text-secondary);
+}
+.sidebar-pr-number {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-draft {
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+.sidebar-attention {
+  font-size: 11px;
+}
+.sidebar-pr-status {
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--text-secondary);
+}
+.sidebar-pr-status .status-dot {
+  width: 7px;
+  height: 7px;
+}
+.sidebar-pr-status--rose {
+  color: #aa3043;
+  font-weight: 650;
+}
+.sidebar-pr-status--amber {
+  color: #8d580d;
+  font-weight: 650;
+}
+.sidebar-pr-status--green {
+  color: #25704e;
+  font-weight: 650;
+}
+.sidebar-ready {
+  font-size: 10px;
+  font-weight: 650;
+  padding: 2px 6px;
+}
+.sidebar-agent {
+  font-size: 10px;
+  font-weight: 600;
+}
+.sidebar-repo h2 small {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
 @media (min-width: 641px) and (max-width: 980px) {
   .workflow-app {
     height: 100dvh;
