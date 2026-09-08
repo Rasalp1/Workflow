@@ -4,10 +4,16 @@ import { writeFile, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { AgentType } from '@/types';
-import { sanitizeBranchName, stripNonBmpChars, validateLocalPath } from '@/lib/security';
+import type { AgentType } from '../types/index.ts';
+import { sanitizeBranchName, stripNonBmpChars, validateLocalPath } from './security.ts';
 
 const execAsync = promisify(exec);
+
+type CommandRunner = (command: string) => Promise<unknown>;
+
+export interface TerminalLauncherDependencies {
+  runCommand?: CommandRunner;
+}
 
 export interface SpawnAgentOptions {
   repoPath: string;
@@ -78,7 +84,7 @@ export async function openTerminalInAntigravity({
   cleanRepoPath: string;
   targetDir: string;
   cliCommand?: string;
-}): Promise<void> {
+}, dependencies: TerminalLauncherDependencies = {}): Promise<void> {
   const repoName = cleanRepoPath.split('/').pop() ?? '';
   const ideCli = '/Applications/Antigravity IDE.app/Contents/Resources/app/bin/antigravity-ide';
 
@@ -97,91 +103,92 @@ set targetDir to "${targetDir}"
 set ideCli to "${ideCli}"
 set cmdString to "${safeCommand}"
 
--- Ensure Antigravity IDE is running and activated
+-- Ensure the app is running
 tell application "Antigravity IDE"
   activate
 end tell
-delay 0.3
+delay 0.5
 
+-- Find the window whose title contains the repo folder name
+set targetWindow to missing value
 tell application "System Events"
-  set ideProcess to missing value
-  if exists (process "Antigravity IDE") then
-    set ideProcess to process "Antigravity IDE"
-  else
-    repeat with p in (every process whose bundle identifier is "com.google.antigravity-ide")
-      set ideProcess to p
-      exit repeat
+  tell process "Antigravity IDE"
+    repeat with w in every window
+      if name of w contains repoName then
+        set targetWindow to w
+        exit repeat
+      end if
     end repeat
-  end if
+  end tell
+end tell
 
-  if ideProcess is not missing value then
-    tell ideProcess
-      set targetWindow to missing value
+-- If no matching window, open the repo in a new window and wait for it to load
+if targetWindow is missing value then
+  «event sysoexec» quoted form of ideCli & " --new-window " & quoted form of repoPath
+  delay 4
+  tell application "System Events"
+    tell process "Antigravity IDE"
       repeat with w in every window
         if name of w contains repoName then
           set targetWindow to w
           exit repeat
         end if
       end repeat
-
-      -- If no window title matches the repo name, use the frontmost open window
-      if targetWindow is missing value and (count of windows) > 0 then
-        set targetWindow to window 1
-      end if
-
-      -- If no windows are open, launch window for repo
-      if (count of windows) = 0 then
-        do shell script quoted form of ideCli & " " & quoted form of repoPath
-        delay 2.5
-        if (count of windows) > 0 then
-          set targetWindow to window 1
-        end if
-      end if
-
-      if targetWindow is not missing value then
-        perform action "AXRaise" of targetWindow
-      end if
-      set frontmost to true
-      delay 0.2
-
-      -- Open command palette (Cmd+Shift+P)
-      key code 35 using {command down, shift down}
-      delay 0.5
-
-      -- Create a new terminal via command ID
-      keystroke "workbench.action.terminal.new"
-      delay 0.3
-      key code 36
-      delay 0.8
-
-      -- Type the command into the fresh terminal
-      keystroke cmdString
-      key code 36
     end tell
-  end if
+  end tell
+end if
+
+-- Raise the matched window and open a terminal, then type command
+tell application "System Events"
+  tell process "Antigravity IDE"
+    if targetWindow is not missing value then
+      perform action "AXRaise" of targetWindow
+    end if
+    set frontmost to true
+    delay 0.3
+    -- Open command palette (Cmd+Shift+P)
+    key code 35 using {command down, shift down}
+    delay 0.6
+    -- Create a new terminal via command ID
+    keystroke "workbench.action.terminal.new"
+    delay 0.4
+    key code 36
+    delay 1.2
+    -- Paste the command into the fresh terminal
+    set the clipboard to cmdString
+    keystroke "v" using {command down}
+    key code 36
+  end tell
 end tell
 `;
 
   const tmpScript = join(tmpdir(), `antigravity-open-${Date.now()}.applescript`);
   await writeFile(tmpScript, appleScript, 'utf8');
   try {
-    await execAsync(`osascript "${tmpScript}"`);
+    const runCommand: CommandRunner = dependencies.runCommand || ((command) => execAsync(command));
+    await runCommand(`osascript "${tmpScript}"`);
   } catch (scriptErr: unknown) {
     const msg = scriptErr instanceof Error ? scriptErr.message : String(scriptErr);
+    const normalizedMessage = msg.toLowerCase();
     if (
-      msg.includes('1002') ||
-      msg.includes('not allowed to send keystrokes') ||
-      msg.includes('-1743') ||
-      msg.includes('Not authorised') ||
-      msg.includes('Not authorized') ||
-      msg.includes('-25211') ||
-      msg.includes('assistive access')
+      normalizedMessage.includes('1002') ||
+      normalizedMessage.includes('not allowed to send keystrokes') ||
+      normalizedMessage.includes('-1743') ||
+      normalizedMessage.includes('not authorised to send apple events') ||
+      normalizedMessage.includes('not authorized to send apple events')
     ) {
+      const settingsPane =
+        normalizedMessage.includes('-1743') ||
+        normalizedMessage.includes('apple events')
+          ? 'Privacy_Automation'
+          : 'Privacy_Accessibility';
       await execAsync(
-        `open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`
+        `open "x-apple.systempreferences:com.apple.preference.security?${settingsPane}"`
       ).catch(() => {});
       throw new Error(
-        `Permission required: Please grant Accessibility and Automation access to your terminal / IDE in macOS System Settings -> Privacy & Security, then try again.`
+        normalizedMessage.includes('-1743') || normalizedMessage.includes('apple events')
+          ? `macOS denied Apple Events from the process running the Workflow server. Check System Settings → Privacy & Security → Automation for the process that launched Workflow (currently /usr/bin/osascript), then retry. macOS reported: ${msg}`
+          : `macOS denied keystrokes to Antigravity IDE. Check System Settings → Privacy & Security → Accessibility for the process running Workflow, then retry. macOS reported: ${msg}`
       );
     }
     throw scriptErr;

@@ -11,76 +11,40 @@ stop_app = os.path.join(home, 'Desktop', 'Stop Workflow Server.app')
 # 1. Compile enhanced main.scpt for Workflow.app
 workflow_scpt = """use AppleScript version "2.4"
 use scripting additions
-use framework "Foundation"
-use framework "AppKit"
+property projectDir : "/Users/rasmusalpsten/Drive C/Projects/Workflow"
+property logFile : "/tmp/workflow-dev.log"
 
-try
-	set iconPath to (POSIX path of (path to me)) & "Contents/Resources/AppIcon.png"
-	set img to current application's NSImage's alloc()'s initWithContentsOfFile:iconPath
-	if img is not missing value then
-		current application's NSApplication's sharedApplication()'s setApplicationIconImage:img
+on run
+	set startCmd to "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; cd " & quoted form of projectDir & " && npm run dev > " & quoted form of logFile & " 2>&1 & server_pid=$!; wait $server_pid"
+	set pidCheck to ""
+	try
+		set pidCheck to «event sysoexec» "lsof -ti :3000 -sTCP:LISTEN"
+	on error
+		set pidCheck to ""
+	end try
+	if pidCheck is "" then
+		«event sysoexec» "open http://localhost:3000"
+		-- Keep the shell under this authorized applet. Do not detach it:
+		-- a detached server loses the applet's Apple Events launch context.
+		try
+			«event sysoexec» startCmd
+		on error
+			-- Stop Workflow Server intentionally terminates this command.
+		end try
+	else
+		«event sysoexec» "open http://localhost:3000"
 	end if
-end try
-
-set exportPath to "export PATH=\\"/opt/homebrew/bin:/usr/local/bin:$PATH\\"; "
-set projectDir to "/Users/rasmusalpsten/Drive C/Projects/Workflow"
-set logFile to "/tmp/workflow-dev.log"
-
-set checkCmd to exportPath & "lsof -ti :3000 -sTCP:LISTEN"
-set isRunning to false
-
-try
-	set pidCheck to do shell script checkCmd
-	if pidCheck is not "" then
-		set isRunning to true
-	end if
-on error
-	set isRunning to false
-end try
-
-if isRunning is false then
-	set startCmd to exportPath & "cd \\"" & projectDir & "\\" && nohup npm run dev > \\"" & logFile & "\\" 2>&1 &"
-	do shell script startCmd
-	display notification "Dev server started on http://localhost:3000" with title "Workflow" subtitle "Server Launched"
-	delay 1.5
-else
-	display notification "Dev server is already running on http://localhost:3000" with title "Workflow" subtitle "Server Active"
-end if
-
-do shell script "open http://localhost:3000"
-
-tell me to quit
+end run
 """
 
 stop_scpt = """use AppleScript version "2.4"
 use scripting additions
-use framework "Foundation"
-use framework "AppKit"
-
-try
-	set iconPath to (POSIX path of (path to me)) & "Contents/Resources/AppIcon.png"
-	set img to current application's NSImage's alloc()'s initWithContentsOfFile:iconPath
-	if img is not missing value then
-		current application's NSApplication's sharedApplication()'s setApplicationIconImage:img
-	end if
-end try
-
-set exportPath to "export PATH=\\"/opt/homebrew/bin:/usr/local/bin:$PATH\\"; "
-
-set checkCmd to exportPath & "LISTEN_PIDS=$(lsof -ti :3000 -sTCP:LISTEN 2>/dev/null); if [ -n \\"$LISTEN_PIDS\\" ]; then ALL_PIDS=\\"\\"; for pid in $LISTEN_PIDS; do ALL_PIDS=\\"$ALL_PIDS $pid\\"; PPID_VAL=$(ps -o ppid= -p \\"$pid\\" 2>/dev/null | tr -d ' '); if [ -n \\"$PPID_VAL\\" ] && [ \\"$PPID_VAL\\" -gt 1 ]; then ALL_PIDS=\\"$ALL_PIDS $PPID_VAL\\"; fi; done; UNIQUE_PIDS=$(echo $ALL_PIDS | tr ' ' '\\\\n' | sort -u | tr '\\\\n' ' '); kill -9 $UNIQUE_PIDS 2>/dev/null; echo \\"STOPPED\\"; else echo \\"NONE\\"; fi"
-
-try
-	set res to do shell script checkCmd
-	if res is "STOPPED" then
-		display notification "Dev server on port 3000 stopped." with title "Workflow" subtitle "Server Stopped"
-	else
-		display notification "No server running on port 3000." with title "Workflow" subtitle "Status Info"
-	end if
-on error
-	display notification "No server running on port 3000." with title "Workflow" subtitle "Status Info"
-end try
-
-tell me to quit
+on run
+	set checkCmd to "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; PIDS=$(lsof -ti :3000 -sTCP:LISTEN 2>/dev/null); if [ -n $PIDS ]; then kill -9 $PIDS 2>/dev/null; fi"
+	try
+		«event sysoexec» checkCmd
+	end try
+end run
 """
 
 if os.path.exists(workflow_app):

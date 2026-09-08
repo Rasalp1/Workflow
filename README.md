@@ -248,19 +248,20 @@ Author @{author} has responded to feedback. Address any open review points.
 
 ## 🖥️ Terminal AI Agent & Worktree Dispatcher
 
-Workflow PR Viewer integrates natively with macOS to open terminal tabs and focus IDE windows via AppleScript ([`src/lib/terminalLauncher.ts`](src/lib/terminalLauncher.ts)).
+Workflow PR Viewer integrates natively with macOS to focus the correct Antigravity IDE window and open its integrated terminal via AppleScript ([`src/lib/terminalLauncher.ts`](src/lib/terminalLauncher.ts)).
 
 ### Worktree Workflow
 When you click **"Resolve via Worktree"** on a PR card:
 1. **Branch Sanitization**: Validates branch name safety to prevent shell injection.
 2. **Worktree Directory**: Creates a worktree at `<parent-dir>/worktrees/<branch-slug>`.
-3. **IDE Focus**: Activates Antigravity IDE (or macOS Terminal), creates a fresh terminal tab, and executes `cd "<worktreePath>"`.
+3. **IDE Focus**: Activates the existing Antigravity IDE instance, opens the repository only when its matching window is not open, creates a fresh integrated terminal, and pastes the command into it.
 
 ### Granting macOS Accessibility Permissions
 
-To allow AppleScript keystrokes (opening terminal tabs in IDE windows), grant your terminal app Accessibility access:
+To allow AppleScript keystrokes to open the integrated terminal, grant the application that starts the Workflow server (for example, Terminal or iTerm2) Accessibility access:
 1. Open **System Settings** -> **Privacy & Security** -> **Accessibility**.
-2. Enable your terminal application (e.g. `Terminal`, `iTerm2`, `Antigravity IDE`, `VS Code`).
+2. Enable the application that starts the Workflow server.
+3. If macOS asks under **Automation**, allow that application to control `Antigravity IDE` and `System Events`.
 
 ---
 
@@ -293,7 +294,7 @@ Workflow PR Viewer is designed as a secure **local-first app**:
 **A**: Ensure all dependencies are installed cleanly via `npm ci`. Run `npm run lint` to verify zero errors and zero warnings.
 
 #### Q: AppleScript error: "Not allowed to send keystrokes"?
-**A**: Grant Accessibility permission to your terminal / IDE in **System Settings -> Privacy & Security -> Accessibility**.
+**A**: Grant the application that starts the Workflow server Accessibility access, then allow it to control `Antigravity IDE` and `System Events` under Automation if prompted. Workflow will focus the matching Antigravity window and paste the command into its integrated terminal.
 
 #### Q: "Local directory does not exist on disk" error when spawning worktree?
 **A**: Verify that the corresponding `REPO_PATH_<SANITIZED_NAME>` variable in `.env.local` points to a valid existing path on your Mac.
