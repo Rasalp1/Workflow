@@ -89,8 +89,10 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({
                   >
                     <div className="sidebar-pr-meta">
                       <GitPullRequest size={14} />
-                      <span>#{pr.number}</span>
-                      {pr.is_draft && <span>Draft</span>}
+                      <span className="sidebar-pr-number">#{pr.number}</span>
+                      {pr.is_draft && (
+                        <span className="sidebar-draft">Draft</span>
+                      )}
                       {agent && (
                         <span
                           className="sidebar-agent"

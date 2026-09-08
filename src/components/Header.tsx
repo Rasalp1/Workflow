@@ -272,14 +272,25 @@ export const Header: React.FC<HeaderProps> = ({
                         setOpenQueue(null);
                       }}
                     >
-                      <GitPullRequest size={14} />
-                      <span>
-                        <strong>#{pr.number}</strong> {pr.title}
+                      <GitPullRequest size={13} />
+                      <strong className="queue-pr-number">#{pr.number}</strong>
+                      <span className="queue-branch" title={pr.branchName}>
+                        {pr.branchName ?? pr.title}
                       </span>
-                      {pr.hasMergeConflicts && (
-                        <span className="text-rose-600">Conflict</span>
+                      {activeAgentPRs[pr.cardId] && (
+                        <span
+                          className="queue-agent"
+                          data-agent={activeAgentPRs[pr.cardId].agent}
+                          title={`${activeAgentPRs[pr.cardId].agent} is working on this pull request`}
+                        >
+                          <RefreshCw size={10} className="animate-spin" />
+                          {activeAgentPRs[pr.cardId].agent}
+                        </span>
                       )}
-                      <ArrowUpRight size={13} />
+                      {pr.hasMergeConflicts && (
+                        <span className="queue-conflict">Conflict</span>
+                      )}
+                      <ArrowUpRight size={12} />
                     </button>
                   ))}
                 </div>
