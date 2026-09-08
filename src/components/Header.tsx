@@ -56,6 +56,8 @@ interface HeaderProps {
   col2Repo?: string;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
+  activeCol1PRId?: string | null;
+  activeCol2PRId?: string | null;
 }
 
 export const WorkspaceBrand = () => (
@@ -88,6 +90,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectPR,
   searchQuery = "",
   onSearchChange,
+  activeCol1PRId,
+  activeCol2PRId,
 }) => {
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [openQueue, setOpenQueue] = useState<"yours" | "theirs" | null>(null);
@@ -263,10 +267,21 @@ export const Header: React.FC<HeaderProps> = ({
               ).map(({ repoName, prs }) => (
                 <div key={repoName}>
                   <p className="queue-repo">{repoName}</p>
-                  {prs.map((pr) => (
+                  {prs.map((pr) => {
+                    const isActivePR =
+                      pr.cardId === activeCol1PRId ||
+                      pr.cardId === activeCol2PRId;
+                    return (
                     <button
                       key={pr.cardId}
-                      className="queue-link"
+                      className={`queue-link${isActivePR ? " is-selected" : ""}`}
+                      data-column={
+                        pr.cardId === activeCol1PRId
+                          ? "primary"
+                          : pr.cardId === activeCol2PRId
+                            ? "secondary"
+                            : undefined
+                      }
                       onClick={() => {
                         onSelectPR(pr.cardId, "bottom");
                         setOpenQueue(null);
@@ -292,7 +307,8 @@ export const Header: React.FC<HeaderProps> = ({
                       )}
                       <ArrowUpRight size={12} />
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               ))
             )}

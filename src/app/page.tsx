@@ -261,56 +261,70 @@ export default function Dashboard() {
   }, [col2PRs, activeCol2PRId]);
 
 
-  // IntersectionObserver to sync Column 1 active state on scroll
+  // Scroll listeners to sync active PR highlight as the user scrolls each column
   useEffect(() => {
     const container = col1ScrollRef.current;
     if (!container || col1PRs.length === 0) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const prId = entry.target.getAttribute('data-pr-id');
-            if (prId) setActiveCol1PRId(prId);
-          }
-        });
-      },
-      { root: container, threshold: 0.3 }
-    );
+    const updateActive = () => {
+      const containerTop = container.getBoundingClientRect().top;
+      let bestId: string | null = null;
+      let bestScore = -Infinity;
 
-    col1PRs.forEach(({ pr }) => {
-      const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
-      const el = document.getElementById(`col1-${cardId}`);
-      if (el) observer.observe(el);
-    });
+      col1PRs.forEach(({ pr }) => {
+        const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
+        const el = document.getElementById(`col1-${cardId}`);
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        // How much of the card is visible inside the container
+        const visibleTop = Math.max(rect.top, containerTop);
+        const visibleBottom = Math.min(rect.bottom, containerTop + container.clientHeight);
+        const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+        if (visibleHeight > bestScore) {
+          bestScore = visibleHeight;
+          bestId = cardId;
+        }
+      });
 
-    return () => observer.disconnect();
+      if (bestId) setActiveCol1PRId(bestId);
+    };
+
+    // Run once immediately to set initial state
+    updateActive();
+    container.addEventListener('scroll', updateActive, { passive: true });
+    return () => container.removeEventListener('scroll', updateActive);
   }, [col1PRs]);
 
-  // IntersectionObserver to sync Column 2 active state on scroll
+  // Scroll listeners to sync Column 2 active state
   useEffect(() => {
     const container = col2ScrollRef.current;
     if (!container || col2PRs.length === 0) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const prId = entry.target.getAttribute('data-pr-id');
-            if (prId) setActiveCol2PRId(prId);
-          }
-        });
-      },
-      { root: container, threshold: 0.3 }
-    );
+    const updateActive = () => {
+      const containerTop = container.getBoundingClientRect().top;
+      let bestId: string | null = null;
+      let bestScore = -Infinity;
 
-    col2PRs.forEach(({ pr }) => {
-      const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
-      const el = document.getElementById(`col2-${cardId}`);
-      if (el) observer.observe(el);
-    });
+      col2PRs.forEach(({ pr }) => {
+        const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
+        const el = document.getElementById(`col2-${cardId}`);
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const visibleTop = Math.max(rect.top, containerTop);
+        const visibleBottom = Math.min(rect.bottom, containerTop + container.clientHeight);
+        const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+        if (visibleHeight > bestScore) {
+          bestScore = visibleHeight;
+          bestId = cardId;
+        }
+      });
 
-    return () => observer.disconnect();
+      if (bestId) setActiveCol2PRId(bestId);
+    };
+
+    updateActive();
+    container.addEventListener('scroll', updateActive, { passive: true });
+    return () => container.removeEventListener('scroll', updateActive);
   }, [col2PRs]);
 
   const handleSelectPR = (cardId: string, position: 'top' | 'bottom' = 'bottom') => {
@@ -719,6 +733,8 @@ export default function Dashboard() {
         col2Repo={col2Repo}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        activeCol1PRId={effectiveActiveCol1PRId}
+        activeCol2PRId={effectiveActiveCol2PRId}
       />
 
       {/* Main Container - Fills Remaining Screen Height */}
