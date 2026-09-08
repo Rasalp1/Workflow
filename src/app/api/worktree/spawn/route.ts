@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server';
 import { spawnWorktreeInAntigravity } from '@/lib/terminalLauncher';
 import { loadConfig } from '@/lib/storage';
 import { validateOrigin } from '@/lib/security';
+import { buildAgentCardId, setActiveAgent } from '@/lib/activeAgents';
 
 export async function POST(request: Request) {
   try {
     validateOrigin(request);
     const body = await request.json();
-    const { repoFullName, localPath, branchName, agent } = body;
+    const { repoFullName, localPath, branchName, agent, cardId, prNumber } = body;
 
     if (!branchName) {
       return NextResponse.json({ error: 'Branch name is required' }, { status: 400 });
@@ -40,11 +41,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: result.message }, { status: 500 });
     }
 
+    const sessionCardId =
+      cardId ||
+      (repoFullName && (prNumber ?? prNumber === 0) ? buildAgentCardId(repoFullName, prNumber) : undefined);
+
+    let activeAgents;
+    if (sessionCardId) {
+      activeAgents = await setActiveAgent(sessionCardId, {
+        agent: targetAgent,
+        branch: branchName,
+        source: body.source === 'menubar' ? 'menubar' : 'web',
+      });
+    }
+
     return NextResponse.json({
       success: true,
       message: result.message,
       worktreePath: result.worktreePath,
       agent: targetAgent,
+      cardId: sessionCardId,
+      activeAgents,
     });
   } catch (error: unknown) {
     console.error('API /api/worktree/spawn Error:', error);

@@ -189,6 +189,7 @@ export const PRCard: React.FC<PRCardProps> = ({
             localPath: pr.local_path || "",
             branchName: pr.head.ref,
             agent: preferredAgent,
+            prNumber: pr.number,
           }),
         });
         const data = await res.json();

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { fetchAuthenticatedUser, getRepoPullRequests, getRateLimitStatus, GitHubRateLimitError } from '@/lib/github';
 import { evaluateGateRule, isPrAwaitingComment } from '@/lib/logicGates';
 import { loadConfig, loadRules } from '@/lib/storage';
+import { loadActiveAgents, reconcileActiveAgents } from '@/lib/activeAgents';
 import { PRWithGates } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -130,11 +131,21 @@ export async function GET(request: Request) {
     const awaitingCommentCount = allPRsWithGates.filter((item) => item.needsAttention).length;
     const theirsToHandleCount = allPRsWithGates.length - awaitingCommentCount;
 
+    // Retire agent sessions whose work has landed, then hand the shared state to
+    // every client in the same payload the menu bar app already polls.
+    let activeAgents: Awaited<ReturnType<typeof loadActiveAgents>> = {};
+    try {
+      activeAgents = await reconcileActiveAgents(allPRsWithGates, currentUser);
+    } catch (agentErr) {
+      console.error('Failed to reconcile active agent sessions:', agentErr);
+    }
+
     return NextResponse.json(
       {
         success: true,
         currentUser,
         prsWithGates: allPRsWithGates,
+        activeAgents,
         monitoredRepos: config.monitoredRepos,
         awaitingCommentCount,
         theirsToHandleCount,

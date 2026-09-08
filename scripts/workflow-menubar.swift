@@ -51,6 +51,13 @@ struct PRWithGatesItem: Decodable {
     let needsAttention: Bool?
 }
 
+struct ActiveAgentEntry: Decodable {
+    let agent: String?
+    let timestamp: Double?
+    let branch: String?
+    let source: String?
+}
+
 struct ApiResponse: Decodable {
     let success: Bool?
     let currentUser: String?
@@ -58,6 +65,13 @@ struct ApiResponse: Decodable {
     let monitoredRepos: [String]?
     let awaitingCommentCount: Int?
     let theirsToHandleCount: Int?
+    let activeAgents: [String: ActiveAgentEntry]?
+    let error: String?
+}
+
+struct ActiveAgentsResponse: Decodable {
+    let success: Bool?
+    let activeAgents: [String: ActiveAgentEntry]?
     let error: String?
 }
 
@@ -511,6 +525,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var currentFilter: PRFilterMode = .needsAttention
     private var isMenuCurrentlyOpen: Bool = false
 
+    /// Shared with the web dashboard through `/api/agents/active`; keyed by card id.
+    private var activeAgents: [String: ActiveAgentEntry] = [:]
+
+    /// Rebuilding the menu deallocates its item targets (`NSMenuItem.target` is a
+    /// weak reference), so a poll landing mid-click would leave dead menu items.
+    /// Automatic renders are therefore deferred until the menu closes.
+    private var needsRenderWhenClosed: Bool = false
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         parseArguments()
         setupStatusItem()
@@ -612,7 +634,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         isMenuCurrentlyOpen = true
         currentFilter = .needsAttention
-        renderMenu()
+        renderMenu(force: true)
         // If it's been more than 10 seconds since last fetch, refresh when opening menu
         if let last = lastFetchTime, Date().timeIntervalSince(last) > 10 {
             fetchPRs()
@@ -623,11 +645,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     
     func menuDidClose(_ menu: NSMenu) {
         isMenuCurrentlyOpen = false
+        if needsRenderWhenClosed {
+            needsRenderWhenClosed = false
+            renderMenu(force: true)
+        }
     }
     
     // MARK: - Data Fetching
     
-    private func fetchPRs() {
+    private func fetchPRs(force: Bool = false) {
         guard !isFetching else { return }
         isFetching = true
         
@@ -649,18 +675,70 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     do {
                         let parsed = try JSONDecoder().decode(ApiResponse.self, from: data)
                         self.latestData = parsed
+                        // The server reconciles finished sessions during this fetch, so
+                        // its map is authoritative over any optimistic local entry.
+                        self.activeAgents = parsed.activeAgents ?? [:]
                         self.isOffline = false
                         self.lastFetchTime = Date()
                         self.updateStatusBarBadge()
-                        self.renderMenu()
+                        self.renderMenu(force: force)
                     } catch {
                         self.isOffline = false
                         self.updateStatusBarBadge(error: true)
-                        self.renderMenu()
+                        self.renderMenu(force: force)
                     }
                 } else {
                     self.isOffline = true
                     self.updateStatusBarBadge(offline: true)
+                    self.renderMenu(force: force)
+                }
+            }
+        }.resume()
+    }
+
+    // MARK: - Active Agent Sessions
+
+    /// Card id shared with the dashboard and `/api/agents/active`.
+    private func agentCardId(for pr: PullRequestItem) -> String {
+        let repo = pr.repo_full_name ?? pr.repo_name ?? ""
+        return "pr-card-\(repo)-\(pr.number)"
+    }
+
+    private func activeAgent(for pr: PullRequestItem) -> ActiveAgentEntry? {
+        return activeAgents[agentCardId(for: pr)]
+    }
+
+    /// Marks a session locally so the badge appears immediately, before the next poll.
+    private func markAgentActiveLocally(pr: PullRequestItem, agent: String) {
+        activeAgents[agentCardId(for: pr)] = ActiveAgentEntry(
+            agent: agent,
+            timestamp: Date().timeIntervalSince1970 * 1000,
+            branch: pr.head?.ref,
+            source: "menubar"
+        )
+    }
+
+    private func updateAgentSession(payload: [String: Any], optimistic: (() -> Void)? = nil) {
+        guard let url = URL(string: "http://localhost:\(port)/api/agents/active"),
+              let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
+
+        optimistic?()
+        renderMenu()
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("http://localhost:\(port)", forHTTPHeaderField: "Origin")
+        request.httpBody = jsonData
+        request.timeoutInterval = 15.0
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let data = data,
+                   let parsed = try? JSONDecoder().decode(ActiveAgentsResponse.self, from: data),
+                   let agents = parsed.activeAgents {
+                    self.activeAgents = agents
                     self.renderMenu()
                 }
             }
@@ -713,7 +791,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     
     // MARK: - Menu Rendering
     
-    private func renderMenu() {
+    /// - Parameter force: render even while the menu is on screen. Only pass `true`
+    ///   for direct user actions (opening the menu, switching filter, hitting
+    ///   refresh) — never for poll-driven updates, which would swap the items out
+    ///   from under the pointer and make the click land on nothing.
+    private func renderMenu(force: Bool = false) {
+        if isMenuCurrentlyOpen && !force {
+            needsRenderWhenClosed = true
+            return
+        }
+
         let oldItems = menu.items
         activeTargets.removeAll()
         
@@ -745,7 +832,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             onFilterSelect: { [weak self] newFilter in
                 guard let self = self else { return }
                 self.currentFilter = newFilter
-                self.renderMenu()
+                self.renderMenu(force: true)
             },
             onOpenDashboard: { [weak self] in
                 guard let self = self else { return }
@@ -770,6 +857,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             newItems.append(NSMenuItem.separator())
         }
         
+        // -------------------------------------------------------------
+        // Active agent sessions summary
+        // -------------------------------------------------------------
+        if !activeAgents.isEmpty {
+            let count = activeAgents.count
+            let summary = NSMenuItem(title: "\(count) agent session(s) active", action: nil, keyEquivalent: "")
+            summary.isEnabled = false
+            summary.attributedTitle = NSAttributedString(
+                string: "  ⟳ \(count) AGENT SESSION\(count == 1 ? "" : "S") ACTIVE",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                    .foregroundColor: NSColor.systemBlue
+                ]
+            )
+            newItems.append(summary)
+
+            let clearAllItem = createMenuItem(title: "    Mark all agent sessions done", keyEquivalent: "") { [weak self] in
+                guard let self = self else { return }
+                self.updateAgentSession(payload: ["action": "clearAll"]) { [weak self] in
+                    self?.activeAgents.removeAll()
+                }
+            }
+            if #available(macOS 11.0, *) {
+                clearAllItem.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: "Mark all done")
+            }
+            newItems.append(clearAllItem)
+            newItems.append(NSMenuItem.separator())
+        }
+
         // -------------------------------------------------------------
         // 2. Section: 🟡 Needs Your Attention
         // -------------------------------------------------------------
@@ -862,7 +978,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             frame: NSRect(x: 0, y: 0, width: headerWidth, height: 26),
             isRefreshing: isFetching
         ) { [weak self] in
-            self?.fetchPRs()
+            self?.fetchPRs(force: true)
         }
         refreshItem.view = refreshView
         newItems.append(refreshItem)
@@ -996,7 +1112,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 "branchName": pr.head?.ref ?? "",
                 "agent": agent,
                 "prompt": prompt,
-                "cardId": "pr-card-\(repoFullName)-\(pr.number)"
+                "prNumber": pr.number,
+                "cardId": agentCardId(for: pr),
+                "source": "menubar"
             ]
             
             guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
@@ -1041,6 +1159,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                             title: "Workflow Agent Started",
                             message: "Launched \(agent) agent for \(rawLabel) in Antigravity IDE terminal (PR #\(pr.number))!"
                         )
+                        self.markAgentActiveLocally(pr: pr, agent: agent)
+                        self.renderMenu()
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                             self.fetchPRs()
                         }
@@ -1105,6 +1225,78 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
     
+    /// Mirrors the dashboard's "Open worktree" action: creates/reuses the git
+    /// worktree for the branch and opens it with the agent in the IDE terminal.
+    private func openWorktree(pr: PullRequestItem, agent: String) {
+        guard let url = URL(string: "http://localhost:\(port)/api/worktree/spawn") else { return }
+        let repoFullName = pr.repo_full_name ?? latestData?.monitoredRepos?.first ?? ""
+
+        let payload: [String: Any] = [
+            "repoFullName": repoFullName,
+            "localPath": pr.local_path ?? "",
+            "branchName": pr.head?.ref ?? "",
+            "agent": agent,
+            "prNumber": pr.number,
+            "cardId": agentCardId(for: pr),
+            "source": "menubar"
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("http://localhost:\(port)", forHTTPHeaderField: "Origin")
+        request.httpBody = jsonData
+        request.timeoutInterval = 60.0
+
+        showNotification(
+            title: "Workflow",
+            message: "Opening git worktree for \(pr.head?.ref ?? "branch") with \(agent)..."
+        )
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let error = error {
+                    self.showNotification(
+                        title: "Workflow Worktree Failed",
+                        message: "Network error: \(error.localizedDescription)"
+                    )
+                    return
+                }
+
+                var errorMessage: String?
+                var isSuccess = false
+                if let data = data,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if let err = json["error"] as? String {
+                        errorMessage = err
+                    } else if let success = json["success"] as? Bool, success {
+                        isSuccess = true
+                    }
+                }
+
+                if let http = response as? HTTPURLResponse, http.statusCode == 200, isSuccess {
+                    self.showNotification(
+                        title: "Workflow Worktree Ready",
+                        message: "Opened worktree for \(pr.head?.ref ?? "branch") with \(agent) in Antigravity IDE!"
+                    )
+                    self.markAgentActiveLocally(pr: pr, agent: agent)
+                    self.renderMenu()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        self.fetchPRs()
+                    }
+                } else {
+                    self.showNotification(
+                        title: "Workflow Worktree Failed",
+                        message: errorMessage ?? "Failed to open worktree on server"
+                    )
+                }
+            }
+        }.resume()
+    }
+
     // MARK: - Menu Item Creators
     
     private func createSectionHeader(title: String, dotColor: NSColor, count: Int) -> NSMenuItem {
@@ -1169,6 +1361,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ]
         attrTitle.append(NSAttributedString(string: cleanTitle, attributes: titleAttrs))
         
+        // Badge: an agent session is currently working on this PR
+        let runningAgent = activeAgent(for: pr)
+        if let runningAgent = runningAgent {
+            let agentName = (runningAgent.agent ?? "agent").uppercased()
+            let agentAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 10.5, weight: .bold),
+                .foregroundColor: NSColor.systemBlue
+            ]
+            attrTitle.append(NSAttributedString(string: "  ⟳ \(agentName)", attributes: agentAttrs))
+        }
+
         // Badges: Conflicts, Drafts
         if pr.has_merge_conflicts == true {
             let conflictAttrs: [NSAttributedString.Key: Any] = [
@@ -1192,7 +1395,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         
         // Icon
         if #available(macOS 11.0, *) {
-            if pr.has_merge_conflicts == true {
+            if runningAgent != nil {
+                menuItem.image = NSImage(systemSymbolName: "bolt.horizontal.circle.fill", accessibilityDescription: "Agent working")
+            } else if pr.has_merge_conflicts == true {
                 menuItem.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Conflict")
             } else if isAttention {
                 menuItem.image = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: "Attention")
@@ -1209,12 +1414,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             activeTargets.append(target)
             menuItem.target = target
+            menuItem.representedObject = target
             menuItem.action = #selector(MenuItemTarget.invoke)
         }
         
         // Rich Submenu for details
         let prSubmenu = NSMenu()
         
+        // 0. Active agent session banner + "mark done" control
+        if let runningAgent = runningAgent {
+            let agentName = runningAgent.agent ?? "agent"
+            let statusItem = NSMenuItem(title: "Agent session active (\(agentName))", action: nil, keyEquivalent: "")
+            statusItem.isEnabled = false
+            statusItem.attributedTitle = NSAttributedString(
+                string: "⟳ Agent session active — \(agentName)",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                    .foregroundColor: NSColor.systemBlue
+                ]
+            )
+            prSubmenu.addItem(statusItem)
+
+            let markDoneItem = createMenuItem(title: "Mark agent session done", keyEquivalent: "") { [weak self] in
+                guard let self = self else { return }
+                let cardId = self.agentCardId(for: pr)
+                self.updateAgentSession(payload: ["action": "clear", "cardId": cardId]) { [weak self] in
+                    self?.activeAgents.removeValue(forKey: cardId)
+                }
+            }
+            if #available(macOS 11.0, *) {
+                markDoneItem.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: "Mark done")
+            }
+            prSubmenu.addItem(markDoneItem)
+            prSubmenu.addItem(NSMenuItem.separator())
+        }
+
         // 1. Agent Actions Section (at top of submenu for quick access)
         let actionableGates = getActionableGates(for: item, currentUser: latestData?.currentUser ?? "")
         if !actionableGates.isEmpty {
@@ -1263,7 +1497,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             
             prSubmenu.addItem(NSMenuItem.separator())
         }
-        
+
+        // 2. Open an isolated git worktree for this branch in the IDE terminal
+        if pr.head?.ref != nil {
+            let worktreeAgent = actionableGates.first(where: { $0.targetAgent != nil })?.targetAgent ?? "codex"
+            let worktreeItem = createMenuItem(
+                title: "Open Worktree in IDE (\(worktreeAgent))",
+                keyEquivalent: ""
+            ) { [weak self] in
+                self?.openWorktree(pr: pr, agent: worktreeAgent)
+            }
+            if #available(macOS 11.0, *) {
+                worktreeItem.image = NSImage(systemSymbolName: "square.split.2x1", accessibilityDescription: "Worktree")
+            }
+            prSubmenu.addItem(worktreeItem)
+            prSubmenu.addItem(NSMenuItem.separator())
+        }
+
         // Open in Dashboard
         if let dashUrl = URL(string: dashboardUrlStr) {
             let openDashItem = createMenuItem(title: "Open in Dashboard", keyEquivalent: "") {
@@ -1322,6 +1572,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         activeTargets.append(target)
         let item = NSMenuItem(title: title, action: #selector(MenuItemTarget.invoke), keyEquivalent: keyEquivalent)
         item.target = target
+        // `target` is weak, so also retain it on the item itself: a menu item that is
+        // still on screen after a re-render must keep working.
+        item.representedObject = target
         return item
     }
 }

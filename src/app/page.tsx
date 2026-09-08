@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { ActiveAgentInfo, AgentType, AppConfig, EvaluatedGateResult, LogicalGateRule, PRWithGates } from '@/types';
-import { getActiveAgentCardIdsToClear } from '@/lib/activeAgentState';
 import { isPrAwaitingComment } from '@/lib/logicGates';
 import { Button } from '@/components/ui/Button';
 import { Notice } from '@/components/ui/Notice';
@@ -26,15 +25,37 @@ export default function Dashboard() {
   // Active In-Process Agents State
   const [activeAgentPRs, setActiveAgentPRs] = useState<Record<string, ActiveAgentInfo>>({});
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('workflow_active_agent_prs');
-      if (saved) {
-        setActiveAgentPRs(JSON.parse(saved));
+  // Active agent sessions live on the server so the dashboard and the macOS menu
+  // bar app always agree on which PRs currently have an agent working on them.
+  const syncActiveAgents = React.useCallback(
+    async (body: Record<string, unknown>) => {
+      try {
+        const res = await fetch('/api/agents/active', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || 'Failed to sync agent sessions');
+        if (data.activeAgents) setActiveAgentPRs(data.activeAgents);
+      } catch (e) {
+        console.error('Failed to sync active agent sessions:', e);
       }
-    } catch (e) {
-      console.error('Failed to load active agent state from localStorage:', e);
-    }
+    },
+    []
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/agents/active', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data?.activeAgents) setActiveAgentPRs(data.activeAgents);
+      })
+      .catch((e) => console.error('Failed to load active agent sessions:', e));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Dual Active Column PR States & Refs
@@ -65,41 +86,23 @@ export default function Dashboard() {
     setActiveAgentPRs((prev) => {
       const updated = { ...prev };
       delete updated[cardKey];
-      try {
-        localStorage.setItem('workflow_active_agent_prs', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Failed to update localStorage:', e);
-      }
       return updated;
     });
+    syncActiveAgents({ action: 'clear', cardId: cardKey });
   };
 
   const handleStartActiveAgent = (cardId: string, agent: AgentType = 'codex') => {
     const cardKey = cardId.replace(/^(col1-|col2-)/, '');
-    setActiveAgentPRs((prev) => {
-      const updated = {
-        ...prev,
-        [cardKey]: {
-          agent,
-          timestamp: Date.now(),
-        },
-      };
-      try {
-        localStorage.setItem('workflow_active_agent_prs', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Failed to update localStorage:', e);
-      }
-      return updated;
-    });
+    setActiveAgentPRs((prev) => ({
+      ...prev,
+      [cardKey]: { agent, timestamp: Date.now() },
+    }));
+    syncActiveAgents({ action: 'start', cardId: cardKey, agent });
   };
 
   const handleClearAllActiveAgents = () => {
     setActiveAgentPRs({});
-    try {
-      localStorage.removeItem('workflow_active_agent_prs');
-    } catch (e) {
-      console.error('Failed to clear active agent sessions from localStorage:', e);
-    }
+    syncActiveAgents({ action: 'clearAll' });
   };
 
   // Fetch PRs and Gates
@@ -121,25 +124,10 @@ export default function Dashboard() {
         setMonitoredRepos(repos);
         setCurrentUser(fetchedCurrentUser);
 
-        setActiveAgentPRs((prev) => {
-          const cardIdsToClear = getActiveAgentCardIdsToClear(prev, fetchedPRs, fetchedCurrentUser);
-          if (cardIdsToClear.length === 0) return prev;
-
-          const updated = { ...prev };
-          cardIdsToClear.forEach((cardId) => delete updated[cardId]);
-
-          try {
-            if (Object.keys(updated).length === 0) {
-              localStorage.removeItem('workflow_active_agent_prs');
-            } else {
-              localStorage.setItem('workflow_active_agent_prs', JSON.stringify(updated));
-            }
-          } catch (e) {
-            console.error('Failed to reconcile active agent sessions in localStorage:', e);
-          }
-
-          return updated;
-        });
+        // The server already retired finished sessions during this fetch.
+        if (data.activeAgents) {
+          setActiveAgentPRs(data.activeAgents);
+        }
 
         // Auto-assign default repos to columns if not set and ensure distinct selection
         if (repos.length > 0) {
@@ -463,23 +451,15 @@ export default function Dashboard() {
       }
     }
 
-    if (targetCardId) {
+    if (data.activeAgents) {
+      setActiveAgentPRs(data.activeAgents);
+    } else if (targetCardId) {
       const cardKey = targetCardId.replace(/^(col1-|col2-)/, '');
-      setActiveAgentPRs((prev) => {
-        const updated = {
-          ...prev,
-          [cardKey]: {
-            agent: payload.agent,
-            timestamp: Date.now(),
-          },
-        };
-        try {
-          localStorage.setItem('workflow_active_agent_prs', JSON.stringify(updated));
-        } catch (e) {
-          console.error(e);
-        }
-        return updated;
-      });
+      setActiveAgentPRs((prev) => ({
+        ...prev,
+        [cardKey]: { agent: payload.agent, timestamp: Date.now() },
+      }));
+      syncActiveAgents({ action: 'start', cardId: cardKey, agent: payload.agent, branch: payload.branchName });
     }
   };
 
@@ -603,6 +583,7 @@ export default function Dashboard() {
           localPath: prWithGates.pr.local_path || '',
           branchName: prWithGates.pr.head.ref,
           agent: preferredAgent,
+          prNumber: prWithGates.pr.number,
         }),
       });
       const data = await res.json();
@@ -613,21 +594,14 @@ export default function Dashboard() {
       const cardKey = `pr-card-${prWithGates.pr.repo_full_name}-${prWithGates.pr.number}`;
       const launchedAgent: AgentType = data.agent || preferredAgent;
 
-      setActiveAgentPRs((prev) => {
-        const updated = {
+      if (data.activeAgents) {
+        setActiveAgentPRs(data.activeAgents);
+      } else {
+        setActiveAgentPRs((prev) => ({
           ...prev,
-          [cardKey]: {
-            agent: launchedAgent,
-            timestamp: Date.now(),
-          },
-        };
-        try {
-          localStorage.setItem('workflow_active_agent_prs', JSON.stringify(updated));
-        } catch (e) {
-          console.error(e);
-        }
-        return updated;
-      });
+          [cardKey]: { agent: launchedAgent, timestamp: Date.now() },
+        }));
+      }
 
       setActionBanner({
         type: 'success',
