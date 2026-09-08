@@ -3,6 +3,10 @@ export type AgentType = 'codex' | 'claude';
 export interface ActiveAgentInfo {
   agent: AgentType;
   timestamp: number;
+  /** Branch the agent session was launched against, when known. */
+  branch?: string;
+  /** Which surface launched the session. */
+  source?: 'web' | 'menubar';
 }
 
 export interface PRUser {
