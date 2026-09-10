@@ -108,6 +108,26 @@ const prs = [
     last_comment: undefined,
   }),
 ];
+const mergeHistory = [
+  {
+    id: 420,
+    number: 42,
+    title: "Improve repository synchronization and retry feedback",
+    repo_full_name: "studio/workspace",
+    html_url: "https://github.com/studio/workspace/pull/42",
+    base_branch: "main",
+    merged_at: "2026-09-08T12:42:00Z",
+  },
+  {
+    id: 280,
+    number: 28,
+    title: "Refine keyboard focus and modal layouts",
+    repo_full_name: "studio/design-system",
+    html_url: "https://github.com/studio/design-system/pull/28",
+    base_branch: "main",
+    merged_at: "2026-09-07T09:18:00Z",
+  },
+];
 const config = {
   githubToken: "",
   hasToken: true,
@@ -140,6 +160,8 @@ async function mockWorkspace(
         },
       });
     else if (path === "/api/rules") await route.fulfill({ json: { rules } });
+    else if (path === "/api/prs/history")
+      await route.fulfill({ json: { mergeHistory } });
     else if (path === "/api/prs")
       await route.fulfill({
         json: {
@@ -182,6 +204,30 @@ async function mockWorkspace(
   await expect(page.locator(".pr-detail").first()).toBeVisible();
   return writes;
 }
+
+test("merge history drawer shows only PR merge events with timestamps", async ({
+  page,
+}) => {
+  await mockWorkspace(page);
+  await page.getByRole("button", { name: "Merge history" }).click();
+
+  const panel = page.locator("#merge-history-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText("Pull requests landed in main");
+  await expect(page.locator(".merge-history-entry")).toHaveCount(2);
+  await expect(page.locator(".merge-history-entry").first()).toContainText("#42");
+  await expect(page.locator(".merge-history-entry time").first()).toHaveAttribute(
+    "dateTime",
+    "2026-09-08T12:42:00Z",
+  );
+  await expect(panel.locator("a").first()).toHaveAttribute(
+    "href",
+    "https://github.com/studio/workspace/pull/42",
+  );
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveAttribute("aria-hidden", "true");
+});
 
 async function assertDialogFits(page: Page) {
   const dialog = page.getByRole("dialog");

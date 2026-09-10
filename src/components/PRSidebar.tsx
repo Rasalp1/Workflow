@@ -109,6 +109,19 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({
                       </span>
                     )}
                     <span className="sidebar-pr-title">{pr.title}</span>
+                    <span className="sidebar-pr-author">
+                      {pr.user.avatar_url ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={pr.user.avatar_url}
+                          alt=""
+                          className="sidebar-pr-author-avatar"
+                        />
+                      ) : (
+                        <span className="sidebar-pr-author-fallback" aria-hidden="true" />
+                      )}
+                      <span>by @{pr.user.login}</span>
+                    </span>
                     <div
                       className={
                         "sidebar-pr-status sidebar-pr-status--" + statusClass
