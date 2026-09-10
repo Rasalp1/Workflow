@@ -7,6 +7,7 @@ home = os.path.expanduser('~')
 project_dir = '/Users/rasmusalpsten/Drive C/Projects/Workflow'
 workflow_app = os.path.join(home, 'Desktop', 'Workflow.app')
 stop_app = os.path.join(home, 'Desktop', 'Stop Workflow Server.app')
+leadgen_app = os.path.join(home, 'Desktop', 'LeadGen.app')
 
 # 1. Compile enhanced main.scpt for Workflow.app
 workflow_scpt = """use AppleScript version "2.4"
@@ -68,15 +69,22 @@ try:
         dock_data = plistlib.load(f)
     
     modified = False
+    dock_targets = {
+        'Workflow.app': ('com.workflow.app', workflow_app),
+        'LeadGen.app': ('com.leadgen.app', leadgen_app),
+    }
     for item in dock_data.get('persistent-apps', []):
         tile_data = item.get('tile-data', {})
         url = tile_data.get('file-data', {}).get('_CFURLString', '')
-        if 'Workflow.app' in url:
-            print("Found Workflow in Dock persistent-apps. Resetting bookmark & mod-dates...")
+        target = next((value for name, value in dock_targets.items() if name in url), None)
+        if target:
+            bundle_id, app_path = target
+            app_name = os.path.basename(app_path)
+            print(f"Found {app_name} in Dock persistent-apps. Resetting bookmark & mod-dates...")
             tile_data.pop('book', None)
             tile_data['file-mod-date'] = 0
             tile_data['parent-mod-date'] = 0
-            tile_data['bundle-identifier'] = 'com.workflow.app'
+            tile_data['bundle-identifier'] = bundle_id
             tile_data['file-type'] = 1
             modified = True
             
@@ -102,9 +110,11 @@ lsregister = '/System/Library/Frameworks/CoreServices.framework/Frameworks/Launc
 if os.path.exists(lsregister):
     subprocess.run([lsregister, '-f', '-r', workflow_app], stderr=subprocess.DEVNULL)
     subprocess.run([lsregister, '-f', '-r', stop_app], stderr=subprocess.DEVNULL)
+    subprocess.run([lsregister, '-f', '-r', leadgen_app], stderr=subprocess.DEVNULL)
 
 subprocess.run(['touch', workflow_app], check=True)
 subprocess.run(['touch', stop_app], check=True)
+subprocess.run(['touch', leadgen_app], check=True)
 
 # 5. Restart Dock and Finder with SIGKILL so no cached state is written on exit
 subprocess.run(['killall', '-9', 'Dock'], stderr=subprocess.DEVNULL)

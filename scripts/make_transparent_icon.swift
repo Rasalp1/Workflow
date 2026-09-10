@@ -4,15 +4,15 @@ import Cocoa
 let fileManager = FileManager.default
 let homeDir = ProcessInfo.processInfo.environment["HOME"] ?? "/Users/rasmusalpsten"
 let currentDir = fileManager.currentDirectoryPath
-let svgPath = "\(currentDir)/public/workflow-symbol.svg"
+let masterIconPath = "\(currentDir)/public/icon.png"
 
-guard let svgData = try? Data(contentsOf: URL(fileURLWithPath: svgPath)),
-      let svgImage = NSImage(data: svgData) else {
-    fatalError("Failed to parse SVG at \(svgPath)")
+guard let masterIconData = try? Data(contentsOf: URL(fileURLWithPath: masterIconPath)),
+      let sourceImage = NSImage(data: masterIconData) else {
+    fatalError("Failed to load transparent master icon at \(masterIconPath)")
 }
 
 // 1. Helper to render exact pixel size at 72 DPI using NSBitmapImageRep directly
-func renderBitmap(size: Int, from svg: NSImage) -> (NSImage, Data)? {
+func renderBitmap(size: Int, from source: NSImage) -> (NSImage, Data)? {
     guard let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil,
         pixelsWide: size,
@@ -35,10 +35,12 @@ func renderBitmap(size: Int, from svg: NSImage) -> (NSImage, Data)? {
     NSColor.clear.set()
     NSRect(x: 0, y: 0, width: size, height: size).fill()
     
-    // Draw SVG centered with padding (100px padding at 1024)
-    let pad = CGFloat(size) * (100.0 / 1024.0)
-    let drawRect = NSRect(x: pad, y: pad, width: CGFloat(size) - 2 * pad, height: CGFloat(size) - 2 * pad)
-    svg.draw(in: drawRect, from: NSRect(origin: .zero, size: svg.size), operation: .sourceOver, fraction: 1.0)
+    source.draw(
+        in: NSRect(x: 0, y: 0, width: size, height: size),
+        from: NSRect(origin: .zero, size: source.size),
+        operation: .copy,
+        fraction: 1.0
+    )
     
     NSGraphicsContext.restoreGraphicsState()
     
@@ -49,13 +51,10 @@ func renderBitmap(size: Int, from svg: NSImage) -> (NSImage, Data)? {
     return (img, pngData)
 }
 
-// 2. Render 1024x1024 master image
-guard let (masterImage, masterPng) = renderBitmap(size: 1024, from: svgImage) else {
+// 2. Validate that the transparent source can be rendered at the master size.
+guard renderBitmap(size: 1024, from: sourceImage) != nil else {
     fatalError("Failed to render 1024x1024 master image")
 }
-
-// Save transparent master PNG to public/icon.png
-try? masterPng.write(to: URL(fileURLWithPath: "\(currentDir)/public/icon.png"))
 
 // 3. Create .iconset directory for iconutil
 let tempIconset = "/tmp/CustomApp.iconset"
@@ -76,13 +75,15 @@ let iconsetSizes: [(String, Int)] = [
 ]
 
 for (name, size) in iconsetSizes {
-    if let (_, pngData) = renderBitmap(size: size, from: svgImage) {
+    if let (_, pngData) = renderBitmap(size: size, from: sourceImage) {
         try? pngData.write(to: URL(fileURLWithPath: "\(tempIconset)/\(name)"))
     }
 }
 
-// 4. Compile with Apple's iconutil into applet.icns
-let icnsPath = "/tmp/applet.icns"
+// 4. Compile with Apple's iconutil into the same AppIcon.icns format used by
+// Manageur and Skiller. Keeping applet.icns as a compatibility copy is useful
+// for AppleScript applets, but AppIcon is the canonical bundle icon.
+let icnsPath = "/tmp/WorkflowAppIcon.icns"
 let process = Process()
 process.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
 process.arguments = ["-c", "icns", tempIconset, "-o", icnsPath]
@@ -97,6 +98,15 @@ let desktopApps = [
     "\(homeDir)/Desktop/Workflow Server.app",
     "\(homeDir)/Desktop/Stop Workflow Server.app"
 ]
+
+func adHocSign(_ appPath: String) {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+    process.arguments = ["--force", "--deep", "--sign", "-", appPath]
+    try? process.run()
+    process.waitUntilExit()
+    print("Ad-hoc signed \(appPath): \(process.terminationStatus == 0)")
+}
 
 for appPath in desktopApps {
     if fileManager.fileExists(atPath: appPath) {
@@ -126,26 +136,43 @@ for appPath in desktopApps {
         try? fileManager.removeItem(atPath: destAppIconIcns)
         try? fileManager.copyItem(atPath: icnsPath, toPath: destAppIconIcns)
         
-        // Copy transparent PNG as AppIcon.png
+        // Copy the exact transparent source PNG as AppIcon.png
         let destAppIconPng = "\(resourcesDir)/AppIcon.png"
         try? fileManager.removeItem(atPath: destAppIconPng)
-        try? masterPng.write(to: URL(fileURLWithPath: destAppIconPng))
+        try? masterIconData.write(to: URL(fileURLWithPath: destAppIconPng))
         
-        // Clean Info.plist: remove CFBundleIconName so macOS falls back directly to CFBundleIconFile
+        // Match the proven Manageur/Skiller setup: use the compiled AppIcon.icns
+        // directly and do not let an asset catalog or CFBundleIconName override it.
         let plistPath = "\(contentsDir)/Info.plist"
         if let plistData = try? Data(contentsOf: URL(fileURLWithPath: plistPath)),
            var plistDict = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any] {
             plistDict.removeValue(forKey: "CFBundleIconName")
-            plistDict["CFBundleIconFile"] = "applet"
+            plistDict["CFBundleIconFile"] = "AppIcon"
             if let updatedData = try? PropertyListSerialization.data(fromPropertyList: plistDict, format: .xml, options: 0) {
                 try? updatedData.write(to: URL(fileURLWithPath: plistPath))
                 print("Cleaned CFBundleIconName from \(plistPath)")
             }
         }
+
+        adHocSign(appPath)
         
-        // Call NSWorkspace.shared.setIcon() to set the kHasCustomIcon Finder flag
-        let success = NSWorkspace.shared.setIcon(masterImage, forFile: appPath, options: [])
-        print("Applied transparent icon to \(appPath): \(success)")
+        // Set Finder's kHasCustomIcon flag from the compiled ICNS, exactly as
+        // Manageur and Skiller do. This is what keeps the transparent silhouette
+        // on both the Desktop and in the Dock.
+        let customIcon = NSImage(contentsOfFile: destAppIconIcns)
+        let success = customIcon.map {
+            NSWorkspace.shared.setIcon($0, forFile: appPath, options: [])
+        } ?? false
+        print("Applied transparent AppIcon.icns to \(appPath): \(success)")
+
+        // Refresh the bundle timestamp and LaunchServices registration so the
+        // Dock does not keep using a stale applet icon.
+        try? fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: appPath)
+        let register = Process()
+        register.executableURL = URL(fileURLWithPath: "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister")
+        register.arguments = ["-f", appPath]
+        try? register.run()
+        register.waitUntilExit()
     } else {
         print("Applet not found at: \(appPath)")
     }
@@ -154,4 +181,3 @@ for appPath in desktopApps {
 // Clean up iconset
 try? fileManager.removeItem(atPath: tempIconset)
 print("Done generating transparent icons!")
-
