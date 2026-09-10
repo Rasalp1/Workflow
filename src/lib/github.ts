@@ -1,4 +1,4 @@
-import { PRComment, PRCommit, PullRequest } from '@/types';
+import { MergeHistoryEntry, PRComment, PRCommit, PullRequest } from '@/types';
 
 export class GitHubRateLimitError extends Error {
   public resetAt: Date;
@@ -33,9 +33,15 @@ const REPO_CACHE_TTL_MS = 25000; // 25 seconds
 // In-memory cache for detailed PR objects keyed by `${repoFullName}#${prNumber}@${updated_at}`
 const prDetailsCache = new Map<string, PullRequest>();
 
+// Merge history is loaded on demand by the right-hand drawer and has its own
+// short TTL so opening it does not add work to the normal PR polling path.
+const mergeHistoryCache = new Map<string, { entries: MergeHistoryEntry[]; timestamp: number }>();
+const MERGE_HISTORY_CACHE_TTL_MS = 30000;
+
 export function clearGitHubCache() {
   repoPrsCache.clear();
   prDetailsCache.clear();
+  mergeHistoryCache.clear();
   rateLimitResetTimestamp = null;
 }
 
@@ -321,6 +327,58 @@ export async function getRepoPullRequests(
   return pullRequests;
 }
 
+export async function getRepoMergeHistory(
+  repoFullName: string,
+  token?: string,
+  forceRefresh = false
+): Promise<MergeHistoryEntry[]> {
+  const [owner, repo] = repoFullName.split('/');
+  if (!owner || !repo) {
+    throw new Error(`Invalid repo format "${repoFullName}". Expected "owner/repo"`);
+  }
+
+  const cachedHistory = mergeHistoryCache.get(repoFullName);
+  if (!forceRefresh && cachedHistory && Date.now() - cachedHistory.timestamp < MERGE_HISTORY_CACHE_TTL_MS) {
+    return cachedHistory.entries;
+  }
+
+  // The closed-PR listing includes merged_at, so this stays focused on merge
+  // events and avoids fetching individual PR commits or discussions.
+  const closedPRs = await fetchGitHubAPI(
+    `/repos/${owner}/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`,
+    token,
+    true
+  );
+
+  const entries: MergeHistoryEntry[] = (Array.isArray(closedPRs) ? closedPRs : [])
+    .filter((rawPr: Record<string, unknown>) => {
+      const base = rawPr.base as { ref?: string } | undefined;
+      return base?.ref === 'main' && typeof rawPr.merged_at === 'string' && rawPr.merged_at.length > 0;
+    })
+    .map((rawPr: Record<string, unknown>) => {
+      const base = rawPr.base as { ref?: string } | undefined;
+      const user = rawPr.user as { login?: string; avatar_url?: string; html_url?: string } | undefined;
+      return {
+        id: rawPr.id as number,
+        number: rawPr.number as number,
+        title: (rawPr.title as string) || 'Untitled pull request',
+        user: {
+          login: user?.login || 'unknown',
+          avatar_url: user?.avatar_url || '',
+          html_url: user?.html_url || '',
+        },
+        repo_full_name: repoFullName,
+        html_url: (rawPr.html_url as string) || `https://github.com/${repoFullName}/pull/${rawPr.number}`,
+        base_branch: base?.ref || 'main',
+        merged_at: rawPr.merged_at as string,
+      };
+    })
+    .sort((a, b) => new Date(b.merged_at).getTime() - new Date(a.merged_at).getTime());
+
+  mergeHistoryCache.set(repoFullName, { entries, timestamp: Date.now() });
+  return entries;
+}
+
 export async function fetchAuthenticatedUser(token?: string): Promise<string | null> {
   const rateLimit = getRateLimitStatus();
   if (rateLimit.isRateLimited && rateLimit.resetAt) {
@@ -510,5 +568,3 @@ export async function undraftPullRequest(
     message: `PR #${prNumber} successfully converted to open ready-for-review PR`,
   };
 }
-
-

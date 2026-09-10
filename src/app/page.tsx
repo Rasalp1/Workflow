@@ -8,6 +8,7 @@ import { Notice } from '@/components/ui/Notice';
 import { Header, WorkspaceBrand } from '@/components/Header';
 import { PRCard } from '@/components/PRCard';
 import { PRSidebar } from '@/components/PRSidebar';
+import { MergeHistorySidebar } from '@/components/MergeHistorySidebar';
 import { PromptModal } from '@/components/PromptModal';
 import { RulesEditorModal } from '@/components/RulesEditorModal';
 import { SettingsModal } from '@/components/SettingsModal';
@@ -80,6 +81,7 @@ export default function Dashboard() {
   const [closeWorktreesError, setCloseWorktreesError] = useState<string | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [rules, setRules] = useState<LogicalGateRule[]>([]);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   const handleClearActiveAgent = (cardId: string) => {
     const cardKey = cardId.replace(/^(col1-|col2-)/, '');
@@ -569,6 +571,7 @@ export default function Dashboard() {
         message: `Successfully merged PR #${prWithGates.pr.number} into ${prWithGates.pr.base.ref}!`,
       });
       setTimeout(() => setActionBanner(null), 5000);
+      setHistoryRefreshKey((key) => key + 1);
       fetchPRs();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to merge PR';
@@ -919,6 +922,8 @@ export default function Dashboard() {
         )}
       </main>
       </div>
+
+      <MergeHistorySidebar monitoredRepos={monitoredRepos} refreshKey={historyRefreshKey} />
 
       {/* Prompt Trigger Modal */}
       {activeGateTrigger && (

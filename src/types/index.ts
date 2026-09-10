@@ -69,6 +69,17 @@ export interface PullRequest {
   needs_attention?: boolean;
 }
 
+export interface MergeHistoryEntry {
+  id: number;
+  number: number;
+  title: string;
+  user: PRUser;
+  repo_full_name: string;
+  html_url: string;
+  base_branch: string;
+  merged_at: string;
+}
+
 export interface LogicalGateRule {
   id: string;
   name: string;
