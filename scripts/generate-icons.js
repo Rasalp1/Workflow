@@ -306,8 +306,10 @@ async function run() {
   await page.setContent(getMenubarHtml(36));
   fs.writeFileSync(path.join(projectRoot, 'public', 'menubar-icon@2x.png'), await page.screenshot({ omitBackground: true }));
 
-  // 5. Build native macOS .icns and Assets.car bundles
-  console.log('Compiling native macOS Assets.car and .icns bundles via actool & iconutil...');
+  // 5. Build native macOS icon bundles. The transparent ICNS is canonical;
+  // make_transparent_icon.swift removes Assets.car so macOS cannot substitute a
+  // catalog-rendered squircle for the source artwork.
+  console.log('Compiling native macOS icon bundles via actool & iconutil...');
   const startAssets = await buildAssetsAndIcns(page, getStartHtml, 'workflow_start');
   const stopAssets = await buildAssetsAndIcns(page, getStopHtml, 'workflow_stop');
 
@@ -387,6 +389,13 @@ async function run() {
   for (const p of stopAppCandidates) {
     updateAppBundle(p, stopAssets, 'com.workflow.stop-server', 'Stop Workflow Server');
   }
+
+  // Finish with the same transparent-ICNS setup used by Manageur and Skiller:
+  // CFBundleIconFile=AppIcon plus Finder's kHasCustomIcon flag sourced from ICNS.
+  execSync('/usr/bin/swift scripts/make_transparent_icon.swift', {
+    cwd: projectRoot,
+    stdio: 'inherit',
+  });
 
   // Update Dock plist to ensure tile-type and bundle-identifier match
   console.log('Ensuring Dock tile-data is configured as application tile...');
