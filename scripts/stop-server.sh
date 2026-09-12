@@ -1,6 +1,6 @@
 #!/bin/bash
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-PROJECT_DIR="/Users/rasmusalpsten/Drive C/Projects/Workflow"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 LISTEN_PIDS=$(lsof -ti :3000 -sTCP:LISTEN 2>/dev/null)
 

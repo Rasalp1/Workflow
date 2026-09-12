@@ -313,7 +313,7 @@ async function run() {
   const startAssets = await buildAssetsAndIcns(page, getStartHtml, 'workflow_start');
   const stopAssets = await buildAssetsAndIcns(page, getStopHtml, 'workflow_stop');
 
-  const homeDir = process.env.HOME || '/Users/rasmusalpsten';
+  const homeDir = process.env.HOME || require('os').homedir();
   const isAppBundle = (p) => {
     try {
       return fs.existsSync(p) && fs.statSync(p).isDirectory() && fs.existsSync(path.join(p, 'Contents'));

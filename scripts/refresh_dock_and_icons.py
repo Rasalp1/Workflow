@@ -4,15 +4,15 @@ import plistlib
 import time
 
 home = os.path.expanduser('~')
-project_dir = '/Users/rasmusalpsten/Drive C/Projects/Workflow'
+project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 workflow_app = os.path.join(home, 'Desktop', 'Workflow.app')
 stop_app = os.path.join(home, 'Desktop', 'Stop Workflow Server.app')
 leadgen_app = os.path.join(home, 'Desktop', 'LeadGen.app')
 
 # 1. Compile enhanced main.scpt for Workflow.app
-workflow_scpt = """use AppleScript version "2.4"
+workflow_scpt = f"""use AppleScript version "2.4"
 use scripting additions
-property projectDir : "/Users/rasmusalpsten/Drive C/Projects/Workflow"
+property projectDir : "{project_dir}"
 property logFile : "/tmp/workflow-dev.log"
 
 on run
