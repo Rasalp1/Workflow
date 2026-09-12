@@ -117,6 +117,8 @@ const mergeHistory = [
     html_url: "https://github.com/studio/workspace/pull/42",
     base_branch: "main",
     merged_at: "2026-09-08T12:42:00Z",
+    user: { login: "alice", avatar_url: "", html_url: "https://github.com/alice" },
+    merged_by: { login: "bob", avatar_url: "", html_url: "https://github.com/bob" },
   },
   {
     id: 280,
@@ -126,6 +128,45 @@ const mergeHistory = [
     html_url: "https://github.com/studio/design-system/pull/28",
     base_branch: "main",
     merged_at: "2026-09-07T09:18:00Z",
+    user: { login: "carol", avatar_url: "", html_url: "https://github.com/carol" },
+    merged_by: { login: "dave", avatar_url: "", html_url: "https://github.com/dave" },
+  },
+  {
+    id: 310,
+    number: 31,
+    title: "Deploy staging pipeline improvements",
+    repo_full_name: "studio/workspace",
+    html_url: "https://github.com/studio/workspace/pull/31",
+    base_branch: "staging",
+    merged_at: "2026-09-06T11:20:00Z",
+    user: { login: "eve", avatar_url: "", html_url: "https://github.com/eve" },
+    merged_by: { login: "frank", avatar_url: "", html_url: "https://github.com/frank" },
+  },
+];
+const closedHistory = [
+  {
+    id: 410,
+    number: 41,
+    title: "Experimental bundle caching (superseded)",
+    repo_full_name: "studio/workspace",
+    html_url: "https://github.com/studio/workspace/pull/41",
+    base_branch: "main",
+    closed_at: "2026-09-08T10:15:00Z",
+    state: "closed",
+    user: { login: "grace", avatar_url: "", html_url: "https://github.com/grace" },
+    closed_by: { login: "heidi", avatar_url: "", html_url: "https://github.com/heidi" },
+  },
+  {
+    id: 305,
+    number: 30,
+    title: "Temporary staging experiment",
+    repo_full_name: "studio/workspace",
+    html_url: "https://github.com/studio/workspace/pull/30",
+    base_branch: "staging",
+    closed_at: "2026-09-05T08:00:00Z",
+    state: "closed",
+    user: { login: "ivan", avatar_url: "", html_url: "https://github.com/ivan" },
+    closed_by: { login: "judy", avatar_url: "", html_url: "https://github.com/judy" },
   },
 ];
 const config = {
@@ -161,7 +202,7 @@ async function mockWorkspace(
       });
     else if (path === "/api/rules") await route.fulfill({ json: { rules } });
     else if (path === "/api/prs/history")
-      await route.fulfill({ json: { mergeHistory } });
+      await route.fulfill({ json: { mergeHistory, closedHistory } });
     else if (path === "/api/prs")
       await route.fulfill({
         json: {
@@ -224,6 +265,47 @@ test("merge history drawer shows only PR merge events with timestamps", async ({
     "href",
     "https://github.com/studio/workspace/pull/42",
   );
+
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveAttribute("aria-hidden", "true");
+});
+
+test("merge history drawer allows choosing main vs staging branch and selecting closed PRs column", async ({
+  page,
+}) => {
+  await mockWorkspace(page);
+  await page.getByRole("button", { name: "Merge history" }).click();
+
+  const panel = page.locator("#merge-history-panel");
+  await expect(panel).toBeVisible();
+
+  // Default: main branch, merged column
+  await expect(panel).toContainText("Pull requests landed in main");
+  await expect(page.locator(".merge-history-entry")).toHaveCount(2);
+  await expect(page.locator(".merge-history-entry").first()).toContainText("#42");
+  await expect(page.locator(".merge-history-entry").first()).toContainText("created by @alice");
+  await expect(page.locator(".merge-history-entry").first()).toContainText("merged by @bob");
+
+  // Switch to staging branch
+  await panel.getByRole("button", { name: "staging" }).click();
+  await expect(panel).toContainText("Pull requests landed in staging");
+  await expect(page.locator(".merge-history-entry")).toHaveCount(1);
+  await expect(page.locator(".merge-history-entry").first()).toContainText("#31");
+
+  // Switch to Closed PRs column — shows ALL closed PRs regardless of branch
+  await panel.getByRole("tab", { name: /Closed/i }).click();
+  await expect(panel).toContainText("All closed pull requests");
+  // Both closed PRs (main + staging) should appear since there's no branch filter
+  await expect(page.locator(".merge-history-entry")).toHaveCount(2);
+  await expect(panel).toContainText("created by @grace");
+  await expect(panel).toContainText("closed by @heidi");
+  await expect(panel).toContainText("created by @ivan");
+  await expect(panel).toContainText("closed by @judy");
+
+  // Switch to Split view (both columns)
+  await panel.getByRole("tab", { name: /Split view/i }).click();
+  await expect(panel.locator(".merge-history-split-columns")).toBeVisible();
+  await expect(panel.locator(".merge-history-split-column")).toHaveCount(2);
 
   await page.keyboard.press("Escape");
   await expect(panel).toHaveAttribute("aria-hidden", "true");

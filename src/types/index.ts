@@ -69,15 +69,22 @@ export interface PullRequest {
   needs_attention?: boolean;
 }
 
+export type HistoryBranch = 'main' | 'staging';
+export type HistoryColumn = 'merged' | 'closed' | 'split';
+
 export interface MergeHistoryEntry {
-  id: number;
+  id: number | string;
   number: number;
   title: string;
-  user: PRUser;
+  user?: PRUser;
+  merged_by?: PRUser | null;
+  closed_by?: PRUser | null;
   repo_full_name: string;
   html_url: string;
   base_branch: string;
-  merged_at: string;
+  merged_at?: string | null;
+  closed_at?: string;
+  state?: 'merged' | 'closed';
 }
 
 export interface LogicalGateRule {
