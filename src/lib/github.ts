@@ -34,8 +34,7 @@ const REPO_CACHE_TTL_MS = 25000; // 25 seconds
 const prDetailsCache = new Map<string, PullRequest>();
 
 // Merge history is loaded on demand by the right-hand drawer and has its own
-// short TTL so opening it does not add work to the normal PR polling path.
-const mergeHistoryCache = new Map<string, { entries: MergeHistoryEntry[]; timestamp: number }>();
+const mergeHistoryCache = new Map<string, { merged: MergeHistoryEntry[]; closed: MergeHistoryEntry[]; timestamp: number }>();
 const MERGE_HISTORY_CACHE_TTL_MS = 30000;
 
 export function clearGitHubCache() {
@@ -327,38 +326,144 @@ export async function getRepoPullRequests(
   return pullRequests;
 }
 
-export async function getRepoMergeHistory(
+export async function getRepoPRHistory(
   repoFullName: string,
   token?: string,
   forceRefresh = false
-): Promise<MergeHistoryEntry[]> {
+): Promise<{ merged: MergeHistoryEntry[]; closed: MergeHistoryEntry[] }> {
   const [owner, repo] = repoFullName.split('/');
   if (!owner || !repo) {
     throw new Error(`Invalid repo format "${repoFullName}". Expected "owner/repo"`);
   }
 
-  const cachedHistory = mergeHistoryCache.get(repoFullName);
-  if (!forceRefresh && cachedHistory && Date.now() - cachedHistory.timestamp < MERGE_HISTORY_CACHE_TTL_MS) {
-    return cachedHistory.entries;
+  const cached = mergeHistoryCache.get(repoFullName);
+  if (!forceRefresh && cached && Date.now() - cached.timestamp < MERGE_HISTORY_CACHE_TTL_MS) {
+    return { merged: cached.merged, closed: cached.closed };
   }
 
-  // The closed-PR listing includes merged_at, so this stays focused on merge
-  // events and avoids fetching individual PR commits or discussions.
-  const closedPRs = await fetchGitHubAPI(
-    `/repos/${owner}/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`,
-    token,
-    true
-  );
+  // Try GraphQL first to retrieve both author (creator) and mergedBy in a single request.
+  let merged: MergeHistoryEntry[] = [];
+  let closed: MergeHistoryEntry[] = [];
+  let usedGraphQL = false;
 
-  const entries: MergeHistoryEntry[] = (Array.isArray(closedPRs) ? closedPRs : [])
-    .filter((rawPr: Record<string, unknown>) => {
-      const base = rawPr.base as { ref?: string } | undefined;
-      return base?.ref === 'main' && typeof rawPr.merged_at === 'string' && rawPr.merged_at.length > 0;
-    })
-    .map((rawPr: Record<string, unknown>) => {
+  if (token) {
+    try {
+      const query = `
+        query GetPRHistory($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) {
+            pullRequests(states: [CLOSED, MERGED], last: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
+              nodes {
+                id
+                number
+                title
+                url
+                mergedAt
+                closedAt
+                baseRefName
+                author {
+                  login
+                  avatarUrl
+                  url
+                }
+                mergedBy {
+                  login
+                  avatarUrl
+                  url
+                }
+                timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
+                  nodes {
+                    ... on ClosedEvent {
+                      actor {
+                        login
+                        avatarUrl
+                        url
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+      const res = await fetch('https://api.github.com/graphql', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'Workflow-App',
+        },
+        body: JSON.stringify({ query, variables: { owner, name: repo } }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const nodes = json.data?.repository?.pullRequests?.nodes;
+        if (Array.isArray(nodes)) {
+          for (const node of nodes) {
+            const isMerged = typeof node.mergedAt === 'string' && node.mergedAt.length > 0;
+            const closedByActor = !isMerged
+              ? (node.timelineItems?.nodes?.[0]?.actor ?? null)
+              : null;
+            const item: MergeHistoryEntry = {
+              id: node.id || node.number,
+              number: node.number,
+              title: node.title || 'Untitled pull request',
+              user: {
+                login: node.author?.login || 'unknown',
+                avatar_url: node.author?.avatarUrl || '',
+                html_url: node.author?.url || (node.author?.login ? `https://github.com/${node.author.login}` : ''),
+              },
+              merged_by: node.mergedBy
+                ? {
+                    login: node.mergedBy.login || 'unknown',
+                    avatar_url: node.mergedBy.avatarUrl || '',
+                    html_url: node.mergedBy.url || `https://github.com/${node.mergedBy.login}`,
+                  }
+                : null,
+              closed_by: closedByActor
+                ? {
+                    login: closedByActor.login || 'unknown',
+                    avatar_url: closedByActor.avatarUrl || '',
+                    html_url: closedByActor.url || `https://github.com/${closedByActor.login}`,
+                  }
+                : null,
+              repo_full_name: repoFullName,
+              html_url: node.url || `https://github.com/${repoFullName}/pull/${node.number}`,
+              base_branch: node.baseRefName || 'main',
+              merged_at: isMerged ? node.mergedAt : null,
+              closed_at: node.closedAt || node.mergedAt || '',
+              state: isMerged ? 'merged' : 'closed',
+            };
+            if (isMerged) {
+              merged.push(item);
+            } else {
+              closed.push(item);
+            }
+          }
+          usedGraphQL = true;
+        }
+      }
+    } catch {
+      // Fallback to REST below
+    }
+  }
+
+  if (!usedGraphQL) {
+    const closedPRs = await fetchGitHubAPI(
+      `/repos/${owner}/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`,
+      token,
+      true
+    );
+
+    const rawList = Array.isArray(closedPRs) ? closedPRs : [];
+    for (const rawPr of rawList) {
       const base = rawPr.base as { ref?: string } | undefined;
       const user = rawPr.user as { login?: string; avatar_url?: string; html_url?: string } | undefined;
-      return {
+      const mergedBy = rawPr.merged_by as { login?: string; avatar_url?: string; html_url?: string } | undefined;
+      const isMerged = typeof rawPr.merged_at === 'string' && rawPr.merged_at.length > 0;
+      const baseBranch = base?.ref || 'main';
+
+      const item: MergeHistoryEntry = {
         id: rawPr.id as number,
         number: rawPr.number as number,
         title: (rawPr.title as string) || 'Untitled pull request',
@@ -367,16 +472,43 @@ export async function getRepoMergeHistory(
           avatar_url: user?.avatar_url || '',
           html_url: user?.html_url || '',
         },
+        merged_by: mergedBy
+          ? {
+              login: mergedBy.login || 'unknown',
+              avatar_url: mergedBy.avatar_url || '',
+              html_url: mergedBy.html_url || '',
+            }
+          : null,
         repo_full_name: repoFullName,
         html_url: (rawPr.html_url as string) || `https://github.com/${repoFullName}/pull/${rawPr.number}`,
-        base_branch: base?.ref || 'main',
-        merged_at: rawPr.merged_at as string,
+        base_branch: baseBranch,
+        merged_at: isMerged ? (rawPr.merged_at as string) : null,
+        closed_at: (rawPr.closed_at as string) || (rawPr.merged_at as string) || '',
+        state: isMerged ? 'merged' : 'closed',
       };
-    })
-    .sort((a, b) => new Date(b.merged_at).getTime() - new Date(a.merged_at).getTime());
 
-  mergeHistoryCache.set(repoFullName, { entries, timestamp: Date.now() });
-  return entries;
+      if (isMerged) {
+        merged.push(item);
+      } else {
+        closed.push(item);
+      }
+    }
+  }
+
+  merged.sort((a, b) => new Date(b.merged_at || 0).getTime() - new Date(a.merged_at || 0).getTime());
+  closed.sort((a, b) => new Date(b.closed_at || 0).getTime() - new Date(a.closed_at || 0).getTime());
+
+  mergeHistoryCache.set(repoFullName, { merged, closed, timestamp: Date.now() });
+  return { merged, closed };
+}
+
+export async function getRepoMergeHistory(
+  repoFullName: string,
+  token?: string,
+  forceRefresh = false
+): Promise<MergeHistoryEntry[]> {
+  const { merged } = await getRepoPRHistory(repoFullName, token, forceRefresh);
+  return merged;
 }
 
 export async function fetchAuthenticatedUser(token?: string): Promise<string | null> {
