@@ -2,7 +2,7 @@
 import Cocoa
 
 let fileManager = FileManager.default
-let homeDir = ProcessInfo.processInfo.environment["HOME"] ?? "$HOME"
+let homeDir = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
 let currentDir = fileManager.currentDirectoryPath
 let masterIconPath = "\(currentDir)/public/icon.png"
 

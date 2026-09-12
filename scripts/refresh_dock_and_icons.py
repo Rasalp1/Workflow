@@ -4,15 +4,15 @@ import plistlib
 import time
 
 home = os.path.expanduser('~')
-project_dir = '$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)'
+project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 workflow_app = os.path.join(home, 'Desktop', 'Workflow.app')
 stop_app = os.path.join(home, 'Desktop', 'Stop Workflow Server.app')
 # app removed
 
 # 1. Compile enhanced main.scpt for Workflow.app
-workflow_scpt = """use AppleScript version "2.4"
+workflow_scpt = f"""use AppleScript version "2.4"
 use scripting additions
-property projectDir : "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+property projectDir : "{project_dir}"
 property logFile : "/tmp/workflow-dev.log"
 
 on run
