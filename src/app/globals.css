@@ -1036,6 +1036,16 @@
   padding: 2px;
   gap: 2px;
 }
+.merge-history-repo-pills {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.merge-history-repo-pills .merge-history-pill {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .merge-history-pill {
   border: none;
   background: transparent;

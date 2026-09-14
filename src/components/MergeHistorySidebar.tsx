@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   Columns2,
   ExternalLink,
+  FolderGit2,
   GitBranch,
   GitMerge,
   GitPullRequestClosed,
@@ -44,7 +45,19 @@ export const MergeHistorySidebar: React.FC<MergeHistorySidebarProps> = ({
   const [manualRefreshKey, setManualRefreshKey] = useState(0);
   const [targetBranch, setTargetBranch] = useState<HistoryBranch>('main');
   const [selectedColumn, setSelectedColumn] = useState<HistoryColumn>('merged');
+  const [selectedRepo, setSelectedRepo] = useState<string>(() => monitoredRepos[0] || '');
   const monitoredRepoKey = monitoredRepos.join(',');
+
+  useEffect(() => {
+    if (monitoredRepos.length > 0 && (!selectedRepo || !monitoredRepos.includes(selectedRepo))) {
+      setSelectedRepo(monitoredRepos[0]);
+    }
+  }, [monitoredRepos, selectedRepo]);
+
+  const selectedRepoShortName = useMemo(() => {
+    if (!selectedRepo) return '';
+    return selectedRepo.includes('/') ? selectedRepo.split('/')[1] : selectedRepo;
+  }, [selectedRepo]);
 
   const repoLabel = useMemo(() => {
     if (monitoredRepos.length === 1) return monitoredRepos[0];
@@ -98,12 +111,19 @@ export const MergeHistorySidebar: React.FC<MergeHistorySidebarProps> = ({
   };
 
   const filteredMerged = useMemo(() => {
-    return mergedEntries.filter((entry) => entry.base_branch === targetBranch);
-  }, [mergedEntries, targetBranch]);
+    return mergedEntries.filter((entry) => {
+      const matchesRepo = !selectedRepo || entry.repo_full_name.toLowerCase() === selectedRepo.toLowerCase();
+      const matchesBranch = entry.base_branch === targetBranch;
+      return matchesRepo && matchesBranch;
+    });
+  }, [mergedEntries, selectedRepo, targetBranch]);
 
   const filteredClosed = useMemo(() => {
-    return closedEntries;
-  }, [closedEntries]);
+    return closedEntries.filter((entry) => {
+      const matchesRepo = !selectedRepo || entry.repo_full_name.toLowerCase() === selectedRepo.toLowerCase();
+      return matchesRepo;
+    });
+  }, [closedEntries, selectedRepo]);
 
   const renderEntry = (entry: MergeHistoryEntry, type: 'merged' | 'closed') => {
     const isMerged = type === 'merged';
@@ -206,20 +226,22 @@ export const MergeHistorySidebar: React.FC<MergeHistorySidebarProps> = ({
   };
 
   const renderEmptyState = (type: 'merged' | 'closed') => {
+    const currentTargetLabel = selectedRepo || repoLabel;
+    const currentShortLabel = selectedRepoShortName || 'this repository';
     if (type === 'merged') {
       return (
         <div className="merge-history-state">
           <GitMerge size={20} aria-hidden="true" />
-          <p>No PRs merged into <code>{targetBranch}</code> yet.</p>
-          <span>{monitoredRepos.length === 0 ? 'Add a repository to start tracking.' : `Watching ${repoLabel}.`}</span>
+          <p>No PRs merged into <code>{targetBranch}</code> for <code>{currentShortLabel}</code>.</p>
+          <span>{monitoredRepos.length === 0 ? 'Add a repository to start tracking.' : `Watching ${currentTargetLabel}.`}</span>
         </div>
       );
     }
     return (
       <div className="merge-history-state">
         <GitPullRequestClosed size={20} aria-hidden="true" />
-        <p>No closed PRs found.</p>
-        <span>{monitoredRepos.length === 0 ? 'Add a repository to start tracking.' : `Watching ${repoLabel}.`}</span>
+        <p>No closed PRs found for <code>{currentShortLabel}</code>.</p>
+        <span>{monitoredRepos.length === 0 ? 'Add a repository to start tracking.' : `Watching ${currentTargetLabel}.`}</span>
       </div>
     );
   };
@@ -262,11 +284,23 @@ export const MergeHistorySidebar: React.FC<MergeHistorySidebarProps> = ({
             </h2>
             <p>
               {selectedColumn === 'closed' ? (
-                <>All closed pull requests</>
+                selectedRepoShortName ? (
+                  <>All closed pull requests in <code>{selectedRepoShortName}</code></>
+                ) : (
+                  <>All closed pull requests</>
+                )
               ) : isSplit ? (
-                <>Pull requests targeting <code>{targetBranch}</code></>
+                selectedRepoShortName ? (
+                  <>Pull requests in <code>{selectedRepoShortName}</code> targeting <code>{targetBranch}</code></>
+                ) : (
+                  <>Pull requests targeting <code>{targetBranch}</code></>
+                )
               ) : (
-                <>Pull requests landed in <code>{targetBranch}</code></>
+                selectedRepoShortName ? (
+                  <>Pull requests in <code>{selectedRepoShortName}</code> landed in <code>{targetBranch}</code></>
+                ) : (
+                  <>Pull requests landed in <code>{targetBranch}</code></>
+                )
               )}
             </p>
           </div>
@@ -280,34 +314,61 @@ export const MergeHistorySidebar: React.FC<MergeHistorySidebarProps> = ({
           </button>
         </div>
 
-        {/* Interactive Controls: Target Branch Selection & Column Selector */}
+        {/* Interactive Controls: Repository Switch, Target Branch Selection & Column Selector */}
         <div className="merge-history-controls">
           <div className="merge-history-control-row">
-            {selectedColumn !== 'closed' && (
-            <div className="merge-history-control-item">
-              <span className="merge-history-control-label">
-                <GitBranch size={12} aria-hidden="true" />
-                <span>Target:</span>
-              </span>
-              <div className="merge-history-pill-group" role="group" aria-label="Select target branch">
-                <button
-                  type="button"
-                  className={`merge-history-pill ${targetBranch === 'main' ? 'is-active' : ''}`}
-                  onClick={() => setTargetBranch('main')}
-                  aria-pressed={targetBranch === 'main'}
-                >
-                  main
-                </button>
-                <button
-                  type="button"
-                  className={`merge-history-pill ${targetBranch === 'staging' ? 'is-active' : ''}`}
-                  onClick={() => setTargetBranch('staging')}
-                  aria-pressed={targetBranch === 'staging'}
-                >
-                  staging
-                </button>
+            {monitoredRepos.length > 1 && (
+              <div className="merge-history-control-item">
+                <span className="merge-history-control-label">
+                  <FolderGit2 size={12} aria-hidden="true" />
+                  <span>Repo:</span>
+                </span>
+                <div className="merge-history-pill-group merge-history-repo-pills" role="group" aria-label="Select repository">
+                  {monitoredRepos.map((repo) => {
+                    const shortName = repo.includes('/') ? repo.split('/')[1] : repo;
+                    const isSelected = selectedRepo === repo;
+                    return (
+                      <button
+                        key={repo}
+                        type="button"
+                        className={`merge-history-pill ${isSelected ? 'is-active' : ''}`}
+                        onClick={() => setSelectedRepo(repo)}
+                        aria-pressed={isSelected}
+                        title={repo}
+                      >
+                        {shortName}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
+
+            {selectedColumn !== 'closed' && (
+              <div className="merge-history-control-item">
+                <span className="merge-history-control-label">
+                  <GitBranch size={12} aria-hidden="true" />
+                  <span>Target:</span>
+                </span>
+                <div className="merge-history-pill-group" role="group" aria-label="Select target branch">
+                  <button
+                    type="button"
+                    className={`merge-history-pill ${targetBranch === 'main' ? 'is-active' : ''}`}
+                    onClick={() => setTargetBranch('main')}
+                    aria-pressed={targetBranch === 'main'}
+                  >
+                    main
+                  </button>
+                  <button
+                    type="button"
+                    className={`merge-history-pill ${targetBranch === 'staging' ? 'is-active' : ''}`}
+                    onClick={() => setTargetBranch('staging')}
+                    aria-pressed={targetBranch === 'staging'}
+                  >
+                    staging
+                  </button>
+                </div>
+              </div>
             )}
 
             <div className="merge-history-control-item">

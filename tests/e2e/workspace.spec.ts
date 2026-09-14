@@ -254,8 +254,9 @@ test("merge history drawer shows only PR merge events with timestamps", async ({
 
   const panel = page.locator("#merge-history-panel");
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText("Pull requests landed in main");
-  await expect(page.locator(".merge-history-entry")).toHaveCount(2);
+  await expect(panel).toContainText("landed in main");
+  // Default selected repo is studio/workspace (1 merged PR into main: #42)
+  await expect(page.locator(".merge-history-entry")).toHaveCount(1);
   await expect(page.locator(".merge-history-entry").first()).toContainText("#42");
   await expect(page.locator(".merge-history-entry time").first()).toHaveAttribute(
     "dateTime",
@@ -266,11 +267,16 @@ test("merge history drawer shows only PR merge events with timestamps", async ({
     "https://github.com/studio/workspace/pull/42",
   );
 
+  // Switch repo to design-system
+  await panel.getByRole("button", { name: "design-system" }).click();
+  await expect(page.locator(".merge-history-entry")).toHaveCount(1);
+  await expect(page.locator(".merge-history-entry").first()).toContainText("#28");
+
   await page.keyboard.press("Escape");
   await expect(panel).toHaveAttribute("aria-hidden", "true");
 });
 
-test("merge history drawer allows choosing main vs staging branch and selecting closed PRs column", async ({
+test("merge history drawer allows choosing repo, main vs staging branch, and selecting closed PRs column", async ({
   page,
 }) => {
   await mockWorkspace(page);
@@ -279,23 +285,35 @@ test("merge history drawer allows choosing main vs staging branch and selecting 
   const panel = page.locator("#merge-history-panel");
   await expect(panel).toBeVisible();
 
-  // Default: main branch, merged column
-  await expect(panel).toContainText("Pull requests landed in main");
-  await expect(page.locator(".merge-history-entry")).toHaveCount(2);
+  // Default: workspace repo, main branch, merged column
+  await expect(panel).toContainText("landed in main");
+  await expect(page.locator(".merge-history-entry")).toHaveCount(1);
   await expect(page.locator(".merge-history-entry").first()).toContainText("#42");
   await expect(page.locator(".merge-history-entry").first()).toContainText("created by @alice");
   await expect(page.locator(".merge-history-entry").first()).toContainText("merged by @bob");
 
+  // Switch repository to design-system
+  await panel.getByRole("button", { name: "design-system" }).click();
+  await expect(page.locator(".merge-history-entry")).toHaveCount(1);
+  await expect(page.locator(".merge-history-entry").first()).toContainText("#28");
+  await expect(page.locator(".merge-history-entry").first()).toContainText("created by @carol");
+  await expect(page.locator(".merge-history-entry").first()).toContainText("merged by @dave");
+
+  // Switch back to workspace repo
+  await panel.getByRole("button", { name: "workspace" }).click();
+  await expect(page.locator(".merge-history-entry")).toHaveCount(1);
+  await expect(page.locator(".merge-history-entry").first()).toContainText("#42");
+
   // Switch to staging branch
   await panel.getByRole("button", { name: "staging" }).click();
-  await expect(panel).toContainText("Pull requests landed in staging");
+  await expect(panel).toContainText("landed in staging");
   await expect(page.locator(".merge-history-entry")).toHaveCount(1);
   await expect(page.locator(".merge-history-entry").first()).toContainText("#31");
 
-  // Switch to Closed PRs column — shows ALL closed PRs regardless of branch
+  // Switch to Closed PRs column — shows closed PRs for selected repo (workspace)
   await panel.getByRole("tab", { name: /Closed/i }).click();
-  await expect(panel).toContainText("All closed pull requests");
-  // Both closed PRs (main + staging) should appear since there's no branch filter
+  await expect(panel).toContainText("All closed pull requests in workspace");
+  // Both closed PRs for workspace (main + staging) should appear
   await expect(page.locator(".merge-history-entry")).toHaveCount(2);
   await expect(panel).toContainText("created by @grace");
   await expect(panel).toContainText("closed by @heidi");
