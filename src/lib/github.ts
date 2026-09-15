@@ -351,7 +351,7 @@ export async function getRepoPRHistory(
       const query = `
         query GetPRHistory($owner: String!, $name: String!) {
           repository(owner: $owner, name: $name) {
-            pullRequests(states: [CLOSED, MERGED], last: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
+            pullRequests(states: [CLOSED, MERGED], first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
               nodes {
                 id
                 number
