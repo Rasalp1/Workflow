@@ -255,7 +255,8 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
         const cleanedRules = mergedRules.map((r: LogicalGateRule) => {
           let updated = r;
           if (updated.id === 'review-with-context' && updated.conditions) {
-            const { hasCommentsByCurrentUser, ...restConditions } = updated.conditions;
+            const restConditions = { ...updated.conditions };
+            delete restConditions.hasCommentsByCurrentUser;
             updated = { ...updated, conditions: { notReviewedByOthers: true, ...restConditions } };
           }
           if (updated.id === 'rebase-non-user-pr' && updated.buttonLabel === 'Rebase') {
@@ -281,4 +282,3 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
 export async function saveRules(rules: LogicalGateRule[]): Promise<void> {
   await atomicWriteJson(RULES_FILE, rules);
 }
-

@@ -149,7 +149,7 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [col1Repo]);
 
   // Fetch App Config & Rules
   const fetchConfigAndRules = React.useCallback(async () => {

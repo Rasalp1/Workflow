@@ -6,7 +6,7 @@
 ![React](https://img.shields.io/badge/React-19.2.8-61DAFB?style=for-the-badge&logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge)
+[![CI](https://github.com/Rasalp1/Workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Rasalp1/Workflow/actions/workflows/ci.yml)
 
 <p align="center">
   <b>A local-first, developer-centric PR management dashboard & CLI AI agent dispatcher.</b>

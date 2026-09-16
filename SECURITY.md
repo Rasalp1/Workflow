@@ -14,10 +14,8 @@ Workflow PR Viewer operates as a **local-first web application**. It runs on you
 
 ## Reporting Vulnerabilities
 
-If you discover a potential security vulnerability in Workflow PR Viewer, please report it responsibly:
+If you discover a potential vulnerability, use GitHub's private vulnerability reporting for this repository. Do not disclose tokens, local paths, exploit details, or proof-of-concept code in a public issue.
 
-- **Do NOT** open a public issue on GitHub.
-- Email security reports to the project maintainers directly.
-- Include a detailed description of the issue, steps to reproduce, and any relevant proof-of-concept code.
+Include a detailed description, affected version or commit, reproduction steps, impact, and a minimal safe proof of concept.
 
 We aim to respond to security reports within 48 hours and release fixes promptly.

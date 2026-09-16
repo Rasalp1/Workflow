@@ -2,6 +2,7 @@ import { chromium } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -313,7 +314,7 @@ async function run() {
   const startAssets = await buildAssetsAndIcns(page, getStartHtml, 'workflow_start');
   const stopAssets = await buildAssetsAndIcns(page, getStopHtml, 'workflow_stop');
 
-  const homeDir = process.env.HOME || require('os').homedir();
+  const homeDir = process.env.HOME || homedir();
   const isAppBundle = (p) => {
     try {
       return fs.existsSync(p) && fs.statSync(p).isDirectory() && fs.existsSync(path.join(p, 'Contents'));
@@ -336,7 +337,7 @@ async function run() {
     '/Applications/Stop Workflow Server.app',
   ].filter(isAppBundle);
 
-  function updateAppBundle(appPath, assets, bundleId, appName) {
+  function updateAppBundle(appPath, assets, bundleId) {
     console.log(`Updating app bundle at ${appPath}...`);
     // Remove any stale Icon\r or resource fork detritus
     const iconFile = path.join(appPath, 'Icon\r');
@@ -383,11 +384,11 @@ async function run() {
   }
 
   for (const p of startAppCandidates) {
-    updateAppBundle(p, startAssets, 'com.workflow.app', 'Workflow');
+    updateAppBundle(p, startAssets, 'com.workflow.app');
   }
 
   for (const p of stopAppCandidates) {
-    updateAppBundle(p, stopAssets, 'com.workflow.stop-server', 'Stop Workflow Server');
+    updateAppBundle(p, stopAssets, 'com.workflow.stop-server');
   }
 
   // Finish with the same transparent-ICNS setup used by Manageur and Skiller:

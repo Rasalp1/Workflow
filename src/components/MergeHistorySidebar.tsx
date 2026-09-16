@@ -45,14 +45,12 @@ export const MergeHistorySidebar: React.FC<MergeHistorySidebarProps> = ({
   const [manualRefreshKey, setManualRefreshKey] = useState(0);
   const [targetBranch, setTargetBranch] = useState<HistoryBranch>('main');
   const [selectedColumn, setSelectedColumn] = useState<HistoryColumn>('merged');
-  const [selectedRepo, setSelectedRepo] = useState<string>(() => monitoredRepos[0] || '');
+  const [selectedRepoPreference, setSelectedRepoPreference] = useState<string>(() => monitoredRepos[0] || '');
   const monitoredRepoKey = monitoredRepos.join(',');
 
-  useEffect(() => {
-    if (monitoredRepos.length > 0 && (!selectedRepo || !monitoredRepos.includes(selectedRepo))) {
-      setSelectedRepo(monitoredRepos[0]);
-    }
-  }, [monitoredRepos, selectedRepo]);
+  const selectedRepo = monitoredRepos.includes(selectedRepoPreference)
+    ? selectedRepoPreference
+    : monitoredRepos[0] || '';
 
   const selectedRepoShortName = useMemo(() => {
     if (!selectedRepo) return '';
@@ -68,8 +66,6 @@ export const MergeHistorySidebar: React.FC<MergeHistorySidebarProps> = ({
     if (!isOpen || monitoredRepoKey.length === 0) return;
 
     const controller = new AbortController();
-    setIsLoading(true);
-    setError(null);
 
     fetch(`/api/prs/history?${refreshKey || manualRefreshKey ? 'force=true' : ''}`, {
       cache: 'no-store',
@@ -332,7 +328,7 @@ export const MergeHistorySidebar: React.FC<MergeHistorySidebarProps> = ({
                         key={repo}
                         type="button"
                         className={`merge-history-pill ${isSelected ? 'is-active' : ''}`}
-                        onClick={() => setSelectedRepo(repo)}
+                        onClick={() => setSelectedRepoPreference(repo)}
                         aria-pressed={isSelected}
                         title={repo}
                       >

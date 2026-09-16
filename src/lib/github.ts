@@ -342,8 +342,8 @@ export async function getRepoPRHistory(
   }
 
   // Try GraphQL first to retrieve both author (creator) and mergedBy in a single request.
-  let merged: MergeHistoryEntry[] = [];
-  let closed: MergeHistoryEntry[] = [];
+  const merged: MergeHistoryEntry[] = [];
+  const closed: MergeHistoryEntry[] = [];
   let usedGraphQL = false;
 
   if (token) {
