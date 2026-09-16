@@ -261,25 +261,32 @@ exec "$AGENT" "$PROMPT"
   }
 }
 
-export async function spawnWorktreeInAntigravity({
-  repoPath,
-  branchName,
-  agent = 'codex',
-}: SpawnWorktreeOptions): Promise<{ success: boolean; message: string; worktreePath: string; agent?: AgentType }> {
+export async function spawnWorktreeInAntigravity(
+  {
+    repoPath,
+    branchName,
+    agent = 'codex',
+  }: SpawnWorktreeOptions,
+  dependencies: TerminalLauncherDependencies = {}
+): Promise<{ success: boolean; message: string; worktreePath: string; agent?: AgentType }> {
   try {
     validateLocalPath(repoPath);
     const cleanRepoPath = repoPath.replace(/\/$/, '');
-    const worktreePath = await ensureWorktree({ repoPath: cleanRepoPath, branchName });
+    const cleanBranch = sanitizeBranchName(branchName);
+    const worktreePath = await ensureWorktree({ repoPath: cleanRepoPath, branchName: cleanBranch });
 
-    await openTerminalInAntigravity({
-      cleanRepoPath,
-      targetDir: worktreePath,
-      cliCommand: agent,
-    });
+    await openTerminalInAntigravity(
+      {
+        cleanRepoPath,
+        targetDir: worktreePath,
+        cliCommand: `git pull origin "${cleanBranch}" && "${agent}"`,
+      },
+      dependencies
+    );
 
     return {
       success: true,
-      message: `Worktree for branch "${branchName}" opened with ${agent} in Antigravity IDE at "${worktreePath}"`,
+      message: `Worktree for branch "${cleanBranch}" opened with ${agent} in Antigravity IDE at "${worktreePath}"`,
       worktreePath,
       agent,
     };

@@ -45,7 +45,7 @@ describe('Security Utilities', () => {
   });
 
   describe('validateOrigin', () => {
-    it('should pass for local origin or missing origin', () => {
+    it('should pass for local origin', () => {
       const mockReq = new Request('http://localhost:3000/api/config', {
         headers: { origin: 'http://localhost:3000', host: 'localhost:3000' },
       });
@@ -57,6 +57,13 @@ describe('Security Utilities', () => {
         headers: { origin: 'https://evil-site.com', host: 'localhost:3000' },
       });
       assert.throws(() => validateOrigin(mockReq), /Forbidden cross-origin request/i);
+    });
+
+    it('should throw on missing origin', () => {
+      const mockReq = new Request('http://localhost:3000/api/config', {
+        headers: { host: 'localhost:3000' },
+      });
+      assert.throws(() => validateOrigin(mockReq), /Missing Origin header/i);
     });
   });
 });

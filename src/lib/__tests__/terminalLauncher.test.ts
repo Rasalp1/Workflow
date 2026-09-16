@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { readFile, unlink } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { openTerminalInAntigravity } from '../terminalLauncher.ts';
+import { openTerminalInAntigravity, spawnWorktreeInAntigravity } from '../terminalLauncher.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -86,4 +86,47 @@ describe('Antigravity integrated terminal launcher', () => {
     );
     assert.equal(commands.length, 1);
   });
+
+  it('builds terminal command that cds into worktree, pulls the branch, and starts the agent', async () => {
+    let generatedScript = '';
+    const runCommand = async (command: string): Promise<unknown> => {
+      if (command.startsWith('osascript ')) {
+        const scriptPath = command.match(/^osascript ["'](.+)["']$/)?.[1];
+        assert.ok(scriptPath);
+        generatedScript = await readFile(scriptPath, 'utf8');
+      }
+      return undefined;
+    };
+
+    const targetDir = '/Users/test/Projects/worktrees/feature-test';
+    const branchName = 'feature-test';
+    const agent = 'claude';
+
+    await openTerminalInAntigravity(
+      {
+        cleanRepoPath: '/Users/test/Projects/repo',
+        targetDir,
+        cliCommand: `git pull origin "${branchName}" && ${agent}`,
+      },
+      { runCommand },
+    );
+
+    assert.ok(
+      generatedScript.includes(
+        `set cmdString to "cd \\"${targetDir}\\" && git pull origin \\"${branchName}\\" && ${agent}"`
+      ),
+      'Generated AppleScript should cd into worktree, pull the branch, and then start the agent',
+    );
+  });
+
+  it('spawnWorktreeInAntigravity handles invalid paths gracefully', async () => {
+    const result = await spawnWorktreeInAntigravity({
+      repoPath: '/non/existent/path',
+      branchName: 'feature-test',
+      agent: 'claude',
+    });
+    assert.equal(result.success, false);
+    assert.ok(result.message.includes('does not exist on disk'));
+  });
 });
+

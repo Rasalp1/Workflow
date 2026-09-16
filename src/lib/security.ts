@@ -1,4 +1,19 @@
 import { existsSync } from 'fs';
+import type { AgentType } from '../types/index.ts';
+
+const VALID_AGENT_TYPES: readonly AgentType[] = ['codex', 'claude'];
+
+/**
+ * Validates that a value is a known agent type before it can reach a shell command.
+ * Rejects anything outside the fixed allowlist to prevent command injection via the
+ * `agent` field, which is otherwise interpolated unquoted into a terminal command.
+ */
+export function validateAgentType(agent: unknown): AgentType {
+  if (typeof agent === 'string' && (VALID_AGENT_TYPES as readonly string[]).includes(agent)) {
+    return agent as AgentType;
+  }
+  throw new Error(`Invalid agent type "${String(agent)}". Must be one of: ${VALID_AGENT_TYPES.join(', ')}.`);
+}
 
 /**
  * Validates and sanitizes a git branch name to prevent shell command injection.
@@ -50,21 +65,23 @@ export function validateOrigin(request: Request): void {
   const origin = request.headers.get('origin');
   const host = request.headers.get('host');
 
-  if (origin) {
-    try {
-      const originUrl = new URL(origin);
-      const allowedHosts = ['localhost', '127.0.0.1', '[::1]'];
-      if (host) {
-        allowedHosts.push(host.split(':')[0]);
-      }
+  if (!origin) {
+    throw new Error('Missing Origin header on state-changing request.');
+  }
 
-      if (!allowedHosts.includes(originUrl.hostname)) {
-        throw new Error(`Forbidden cross-origin request from "${origin}"`);
-      }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      throw new Error(`Invalid origin header: ${msg}`);
+  try {
+    const originUrl = new URL(origin);
+    const allowedHosts = ['localhost', '127.0.0.1', '[::1]'];
+    if (host) {
+      allowedHosts.push(host.split(':')[0]);
     }
+
+    if (!allowedHosts.includes(originUrl.hostname)) {
+      throw new Error(`Forbidden cross-origin request from "${origin}"`);
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`Invalid origin header: ${msg}`);
   }
 }
 

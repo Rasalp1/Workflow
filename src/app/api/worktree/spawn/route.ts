@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { spawnWorktreeInAntigravity } from '@/lib/terminalLauncher';
 import { loadConfig } from '@/lib/storage';
-import { validateOrigin } from '@/lib/security';
+import { validateOrigin, validateAgentType } from '@/lib/security';
 import { buildAgentCardId, setActiveAgent } from '@/lib/activeAgents';
 
 export async function POST(request: Request) {
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const targetAgent = (agent || config.defaultAgent || 'codex') as import('@/types').AgentType;
+    const targetAgent = validateAgentType(agent || config.defaultAgent || 'codex');
 
     const result = await spawnWorktreeInAntigravity({
       repoPath: targetPath,

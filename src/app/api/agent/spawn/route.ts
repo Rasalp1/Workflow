@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { spawnAgentInTerminal } from '@/lib/terminalLauncher';
 import { loadConfig } from '@/lib/storage';
-import { AgentType } from '@/types';
-import { validateOrigin } from '@/lib/security';
+import { validateOrigin, validateAgentType } from '@/lib/security';
 import { buildAgentCardId, setActiveAgent } from '@/lib/activeAgents';
 
 export async function POST(request: Request) {
@@ -30,7 +29,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const targetAgent: AgentType = agent || config.defaultAgent || 'codex';
+    const targetAgent = validateAgentType(agent || config.defaultAgent || 'codex');
 
     const result = await spawnAgentInTerminal({
       repoPath: targetPath,
