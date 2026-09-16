@@ -24,8 +24,6 @@ set -euo pipefail
 APPS=(
   "$HOME/Desktop/Workflow.app"
   "$HOME/Desktop/Stop Workflow Server.app"
-
-
 )
 
 for app in "${APPS[@]}"; do

@@ -7,7 +7,6 @@ home = os.path.expanduser('~')
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 workflow_app = os.path.join(home, 'Desktop', 'Workflow.app')
 stop_app = os.path.join(home, 'Desktop', 'Stop Workflow Server.app')
-# app removed
 
 # 1. Compile enhanced main.scpt for Workflow.app
 workflow_scpt = f"""use AppleScript version "2.4"
@@ -71,7 +70,6 @@ try:
     modified = False
     dock_targets = {
         'Workflow.app': ('com.workflow.app', workflow_app),
-
     }
     for item in dock_data.get('persistent-apps', []):
         tile_data = item.get('tile-data', {})
@@ -110,11 +108,9 @@ lsregister = '/System/Library/Frameworks/CoreServices.framework/Frameworks/Launc
 if os.path.exists(lsregister):
     subprocess.run([lsregister, '-f', '-r', workflow_app], stderr=subprocess.DEVNULL)
     subprocess.run([lsregister, '-f', '-r', stop_app], stderr=subprocess.DEVNULL)
-# lsregister app removed
 
 subprocess.run(['touch', workflow_app], check=True)
 subprocess.run(['touch', stop_app], check=True)
-# touch app removed
 
 # 5. Restart Dock and Finder with SIGKILL so no cached state is written on exit
 subprocess.run(['killall', '-9', 'Dock'], stderr=subprocess.DEVNULL)
