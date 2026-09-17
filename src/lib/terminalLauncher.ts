@@ -1,13 +1,14 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, unlink } from 'fs/promises';
+import { writeFile, unlink, rm } from 'fs/promises';
 import { existsSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import type { AgentType } from '../types/index.ts';
-import { sanitizeBranchName, stripNonBmpChars, validateLocalPath } from './security.ts';
+import { escapeAppleScriptString, sanitizeBranchName, validateLocalPath } from './security.ts';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 type CommandRunner = (command: string) => Promise<unknown>;
 
@@ -42,32 +43,40 @@ export async function ensureWorktree({
   const cleanBranch = sanitizeBranchName(branchName);
   const branchSlug = cleanBranch.replace(/[^a-zA-Z0-9._-]/g, '-');
   const cleanRepoPath = repoPath.replace(/\/$/, '');
-  const parentDir = cleanRepoPath.substring(0, cleanRepoPath.lastIndexOf('/'));
-  const worktreesDir = `${parentDir}/worktrees`;
-  const worktreePath = `${worktreesDir}/${branchSlug}`;
+  const parentDir = dirname(cleanRepoPath);
+  const worktreesDir = join(parentDir, 'worktrees');
+  const worktreePath = join(worktreesDir, branchSlug);
 
   // Ensure worktrees container directory exists
-  await execAsync(`mkdir -p "${worktreesDir}"`);
+  await execFileAsync('mkdir', ['-p', worktreesDir]);
 
   // Check if worktree directory already exists on disk or in git worktree list
   const directoryExists = existsSync(worktreePath);
-  const { stdout: existingWorktrees } = await execAsync(`git -C "${cleanRepoPath}" worktree list`).catch(() => ({ stdout: '' }));
+  const { stdout: existingWorktrees } = await execFileAsync('git', ['-C', cleanRepoPath, 'worktree', 'list']).catch(() => ({ stdout: '' }));
   const registeredInGit = existingWorktrees.split('\n').some((line) => line.includes(worktreePath) || line.includes(branchSlug));
   const alreadyExists = directoryExists || registeredInGit;
 
   if (!alreadyExists) {
     // Fetch latest commits from remote for branch
-    await execAsync(`git -C "${cleanRepoPath}" fetch origin "${cleanBranch}"`).catch(() => {});
-    
-    // Try worktree add: 1. branch directly, 2. new local branch from origin/branch, 3. fallback create
-    const addCmd = `git -C "${cleanRepoPath}" worktree add "${worktreePath}" "${cleanBranch}" 2>/dev/null || git -C "${cleanRepoPath}" worktree add "${worktreePath}" -b "${branchSlug}" "origin/${cleanBranch}" 2>/dev/null || git -C "${cleanRepoPath}" worktree add "${worktreePath}" HEAD`;
-    try {
-      await execAsync(addCmd);
-    } catch (addError: unknown) {
-      if (!existsSync(worktreePath)) {
-        throw addError;
+    await execFileAsync('git', ['-C', cleanRepoPath, 'fetch', 'origin', cleanBranch]).catch(() => {});
+
+    // Try worktree add: branch directly, a new local branch from origin, then HEAD.
+    const addAttempts = [
+      ['worktree', 'add', worktreePath, cleanBranch],
+      ['worktree', 'add', worktreePath, '-b', branchSlug, `origin/${cleanBranch}`],
+      ['worktree', 'add', worktreePath, 'HEAD'],
+    ];
+    let addError: unknown;
+    for (const args of addAttempts) {
+      try {
+        await execFileAsync('git', ['-C', cleanRepoPath, ...args]);
+        addError = undefined;
+        break;
+      } catch (error: unknown) {
+        addError = error;
       }
     }
+    if (addError && !existsSync(worktreePath)) throw addError;
   }
 
   return worktreePath;
@@ -92,15 +101,13 @@ export async function openTerminalInAntigravity({
     ? `cd "${targetDir}" && ${cliCommand}`
     : `cd "${targetDir}"`;
 
-  const safeCommand = stripNonBmpChars(fullCommand)
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"');
+  const safeCommand = escapeAppleScriptString(fullCommand);
 
   const appleScript = `
-set repoName to "${repoName}"
-set repoPath to "${cleanRepoPath}"
-set targetDir to "${targetDir}"
-set ideCli to "${ideCli}"
+set repoName to "${escapeAppleScriptString(repoName)}"
+set repoPath to "${escapeAppleScriptString(cleanRepoPath)}"
+set targetDir to "${escapeAppleScriptString(targetDir)}"
+set ideCli to "${escapeAppleScriptString(ideCli)}"
 set cmdString to "${safeCommand}"
 
 -- Ensure the app is running
@@ -325,7 +332,7 @@ export async function closeAllWorktreesInTerminal({
 
     for (const repo of cleanRepoPaths) {
       try {
-        const { stdout: listOut } = await execAsync(`git -C "${repo}" worktree list --porcelain`).catch(() => ({ stdout: '' }));
+        const { stdout: listOut } = await execFileAsync('git', ['-C', repo, 'worktree', 'list', '--porcelain']).catch(() => ({ stdout: '' }));
         const lines = listOut.split('\n');
         const worktreePaths = lines
           .filter((line) => line.startsWith('worktree '))
@@ -336,16 +343,16 @@ export async function closeAllWorktreesInTerminal({
           const wt = worktreePaths[i];
           if (!wt) continue;
           try {
-            await execAsync(`git -C "${repo}" worktree remove --force "${wt}"`);
+            await execFileAsync('git', ['-C', repo, 'worktree', 'remove', '--force', wt]);
           } catch {
             if (existsSync(wt)) {
-              await execAsync(`rm -rf "${wt}"`).catch(() => {});
+              await rm(wt, { recursive: true, force: true }).catch(() => {});
             }
           }
           totalRemoved++;
         }
 
-        await execAsync(`git -C "${repo}" worktree prune`).catch(() => {});
+        await execFileAsync('git', ['-C', repo, 'worktree', 'prune']).catch(() => {});
       } catch (repoErr) {
         console.error(`Error removing worktrees for repo ${repo}:`, repoErr);
       }

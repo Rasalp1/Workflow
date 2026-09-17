@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   try {
     validateOrigin(request);
     const body = await request.json();
-    const { repoFullName, localPath, branchName, agent, cardId, prNumber } = body;
+    const { repoFullName, branchName, agent, cardId, prNumber } = body;
 
     if (!branchName) {
       return NextResponse.json({ error: 'Branch name is required' }, { status: 400 });
@@ -16,7 +16,6 @@ export async function POST(request: Request) {
 
     const config = await loadConfig();
     const targetPath =
-      localPath ||
       config.repoPaths[repoFullName] ||
       process.env[`REPO_PATH_${(repoFullName || '').replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`];
 
