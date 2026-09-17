@@ -43,7 +43,7 @@ Reviewing multiple pull requests across fast-moving repositories creates immense
 **Workflow PR Viewer** bridges your web browser and local development environment:
 1. **Unified Dual-Column Feed**: Monitor pull requests across multiple repositories concurrently with independent scrolling columns and instant repository filtering.
 2. **Automated Logic Gates**: Define custom evaluation rules (e.g., *"Is the PR author myself, and did someone else leave the last review comment?"*) to immediately flag actionable PRs.
-3. **Seamless AI Agent Dispatching**: Launch CLI agents (`codex`, `claude`, `cursor`, etc.) pre-loaded with contextual prompts targeting specific PR branches.
+3. **Seamless AI Agent Dispatching**: Launch supported CLI agents (`codex` or `claude`) pre-loaded with contextual prompts targeting specific PR branches.
 4. **One-Click Git Worktree Isolation**: Resolve merge conflicts or review complex branch changes in an isolated Git worktree workspace without dirtying your main local working tree.
 
 ---
@@ -173,7 +173,7 @@ Configuration is managed via `.env.local` in the project root:
 # 1. GitHub Personal Access Token (Requires 'repo' scope)
 GITHUB_TOKEN=ghp_your_github_personal_access_token_here
 
-# 2. Default CLI Agent Executable ("codex", "claude", "cursor", etc.)
+# 2. Default CLI Agent Executable ("codex" or "claude")
 DEFAULT_AGENT=codex
 
 # 3. Monitored Repositories (Comma-separated 'owner/repo' format)
