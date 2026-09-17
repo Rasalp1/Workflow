@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { sanitizeBranchName, stripNonBmpChars, validateLocalPath, validateOrigin } from '../security.ts';
+import {
+  escapeAppleScriptString,
+  sanitizeBranchName,
+  stripNonBmpChars,
+  validateLocalPath,
+  validateOrigin,
+} from '../security.ts';
 
 describe('Security Utilities', () => {
   describe('stripNonBmpChars', () => {
@@ -41,6 +47,17 @@ describe('Security Utilities', () => {
     it('should throw on invalid or non-existent path', () => {
       assert.throws(() => validateLocalPath('/non/existent/path/99999'), /does not exist on disk/i);
       assert.throws(() => validateLocalPath('../../etc/passwd'), /Traversal or null bytes/i);
+      assert.throws(() => validateLocalPath(process.execPath), /not a directory/i);
+    });
+  });
+
+  describe('escapeAppleScriptString', () => {
+    it('should escape AppleScript string delimiters and backslashes', () => {
+      assert.strictEqual(escapeAppleScriptString('a"b\\c'), 'a\\"b\\\\c');
+    });
+
+    it('should represent line breaks without creating multiline string literals', () => {
+      assert.strictEqual(escapeAppleScriptString('line\nbreak'), 'line\\nbreak');
     });
   });
 
