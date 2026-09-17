@@ -7,8 +7,8 @@ Workflow PR Viewer operates as a **local-first web application**. It runs on you
 ### Security Guards Implemented
 
 1. **CSRF & Origin Verification**: API endpoints enforce strict local origin verification ([`src/lib/security.ts`](src/lib/security.ts)) to block unauthorized cross-origin requests from external web pages.
-2. **Shell Injection Prevention**: All branch names, directory paths, and command arguments sent to AppleScript or terminal execution are sanitized via [`sanitizeBranchName`](src/lib/security.ts) and [`validateLocalPath`](src/lib/security.ts).
-3. **Local Credentials Protection**: Secrets such as `GITHUB_TOKEN` are stored strictly in `.env.local` on your local filesystem and are never transmitted to third-party tracking or remote telemetry servers.
+2. **Shell Injection Prevention**: Branch names are allowlisted, local paths must be existing absolute directories, and Git/worktree operations use argument arrays instead of interpolated shell commands. Values embedded in AppleScript are escaped via [`escapeAppleScriptString`](src/lib/security.ts).
+3. **Local Credentials Protection**: Secrets such as `GITHUB_TOKEN` are stored locally and never transmitted to third-party tracking or remote telemetry servers. If entered through the settings UI, the token is written to `.workflow-data/config.json` with owner-only (`0600`) permissions; this is local plaintext storage protected by the operating system account, not encryption. Use `.env.local` and do not share either file.
 
 ---
 

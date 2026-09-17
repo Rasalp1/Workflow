@@ -1,4 +1,5 @@
-import { existsSync } from 'fs';
+import { existsSync, statSync } from 'fs';
+import path from 'path';
 import type { AgentType } from '../types/index.ts';
 
 const VALID_AGENT_TYPES: readonly AgentType[] = ['codex', 'claude'];
@@ -49,12 +50,21 @@ export function validateLocalPath(localPath: string): void {
     throw new Error('Local directory path is required.');
   }
 
-  if (localPath.includes('\0') || localPath.includes('..')) {
+  const trimmed = localPath.trim();
+  if (trimmed.includes('\0') || trimmed.includes('..')) {
     throw new Error(`Invalid local directory path "${localPath}". Traversal or null bytes detected.`);
   }
 
-  if (!existsSync(localPath)) {
+  if (!path.isAbsolute(trimmed)) {
+    throw new Error(`Invalid local directory path "${localPath}". An absolute path is required.`);
+  }
+
+  if (!existsSync(trimmed)) {
     throw new Error(`Local directory "${localPath}" does not exist on disk.`);
+  }
+
+  if (!statSync(trimmed).isDirectory()) {
+    throw new Error(`Local path "${localPath}" is not a directory.`);
   }
 }
 
@@ -94,3 +104,11 @@ export function stripNonBmpChars(input: string): string {
   return input.replace(/[^\u0000-\uFFFF]/gu, '');
 }
 
+/** Escapes untrusted values before embedding them in an AppleScript string literal. */
+export function escapeAppleScriptString(input: string): string {
+  return stripNonBmpChars(input)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n');
+}

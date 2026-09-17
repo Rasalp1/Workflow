@@ -191,7 +191,10 @@ async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
   await ensureDataDirExists();
   const tmpPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2, 8)}.tmp`;
   const content = JSON.stringify(data, null, 2);
-  await fs.writeFile(tmpPath, content, 'utf-8');
+  await fs.writeFile(tmpPath, content, { encoding: 'utf-8', mode: 0o600 });
+  // chmod is required because an existing umask or platform-specific defaults
+  // can otherwise leave a newly replaced config file group/world-readable.
+  await fs.chmod(tmpPath, 0o600);
   await fs.rename(tmpPath, filePath);
 }
 

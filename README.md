@@ -124,7 +124,7 @@ Workflow/
 | **Node.js** | **v20.0.0** or higher |
 | **Package Manager** | **npm** (v10+) |
 | **GitHub Access Token** | Personal Access Token with `repo` scope |
-| **CLI AI Agents (Optional)** | Installed CLI binaries (`codex`, `claude`, `cursor`, etc.) |
+| **CLI AI Agents (Optional)** | Installed `codex` or `claude` CLI binary |
 
 ---
 
@@ -132,8 +132,8 @@ Workflow/
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/your-username/workflow.git
-cd workflow
+git clone https://github.com/Rasalp1/Workflow.git
+cd Workflow
 ```
 
 ### Step 2: Install Dependencies

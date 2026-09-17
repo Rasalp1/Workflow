@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { loadConfig, saveConfig } from '@/lib/storage';
-import { validateOrigin } from '@/lib/security';
+import { validateLocalPath, validateOrigin } from '@/lib/security';
 import { clearGitHubCache } from '@/lib/github';
 
 export async function GET() {
@@ -25,6 +25,26 @@ export async function POST(request: Request) {
   try {
     validateOrigin(request);
     const newConfig = await request.json();
+    if (!newConfig || typeof newConfig !== 'object' || Array.isArray(newConfig)) {
+      return NextResponse.json({ error: 'Configuration must be a JSON object.' }, { status: 400 });
+    }
+
+    const requestedRepoPaths = (newConfig as { repoPaths?: unknown }).repoPaths;
+    if (requestedRepoPaths !== undefined) {
+      if (!requestedRepoPaths || typeof requestedRepoPaths !== 'object' || Array.isArray(requestedRepoPaths)) {
+        return NextResponse.json({ error: 'repoPaths must be an object.' }, { status: 400 });
+      }
+      for (const [repo, localPath] of Object.entries(requestedRepoPaths)) {
+        if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+          return NextResponse.json({ error: `Invalid repository name "${repo}".` }, { status: 400 });
+        }
+        if (localPath === '') continue;
+        if (typeof localPath !== 'string') {
+          return NextResponse.json({ error: `Path for "${repo}" must be a string.` }, { status: 400 });
+        }
+        validateLocalPath(localPath);
+      }
+    }
     const currentConfig = await loadConfig();
 
     const merged = {
@@ -55,4 +75,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
-
