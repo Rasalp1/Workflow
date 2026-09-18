@@ -4,6 +4,7 @@ import {
   escapeAppleScriptString,
   sanitizeBranchName,
   stripNonBmpChars,
+  validateConfiguredRepo,
   validateLocalPath,
   validateOrigin,
 } from '../security.ts';
@@ -76,11 +77,26 @@ describe('Security Utilities', () => {
       assert.throws(() => validateOrigin(mockReq), /Forbidden cross-origin request/i);
     });
 
+    it('should reject an origin that merely matches the request Host header', () => {
+      const mockReq = new Request('http://attacker.example/api/config', {
+        headers: { origin: 'https://attacker.example', host: 'attacker.example' },
+      });
+      assert.throws(() => validateOrigin(mockReq), /Forbidden cross-origin request/i);
+    });
+
     it('should throw on missing origin', () => {
       const mockReq = new Request('http://localhost:3000/api/config', {
         headers: { host: 'localhost:3000' },
       });
       assert.throws(() => validateOrigin(mockReq), /Missing Origin header/i);
+    });
+  });
+
+  describe('validateConfiguredRepo', () => {
+    it('allows only a configured owner/repo pair', () => {
+      assert.strictEqual(validateConfiguredRepo('acme/product', ['acme/product']), 'acme/product');
+      assert.throws(() => validateConfiguredRepo('acme/other', ['acme/product']), /not configured/i);
+      assert.throws(() => validateConfiguredRepo('acme/product/extra', ['acme/product']), /owner\/repo/i);
     });
   });
 });

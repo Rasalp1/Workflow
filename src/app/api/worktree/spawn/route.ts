@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { spawnWorktreeInAntigravity } from '@/lib/terminalLauncher';
 import { loadConfig } from '@/lib/storage';
-import { validateOrigin, validateAgentType } from '@/lib/security';
+import { validateConfiguredRepo, validateOrigin, validateAgentType } from '@/lib/security';
 import { buildAgentCardId, setActiveAgent } from '@/lib/activeAgents';
 
 export async function POST(request: Request) {
@@ -15,9 +15,15 @@ export async function POST(request: Request) {
     }
 
     const config = await loadConfig();
+    let configuredRepo: string;
+    try {
+      configuredRepo = validateConfiguredRepo(repoFullName, config.monitoredRepos);
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid repository.' }, { status: 400 });
+    }
     const targetPath =
-      config.repoPaths[repoFullName] ||
-      process.env[`REPO_PATH_${(repoFullName || '').replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`];
+      config.repoPaths[configuredRepo] ||
+      process.env[`REPO_PATH_${configuredRepo.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`];
 
     if (!targetPath) {
       return NextResponse.json(

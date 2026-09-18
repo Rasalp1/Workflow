@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { undraftPullRequest } from '@/lib/github';
 import { loadConfig } from '@/lib/storage';
-import { validateOrigin } from '@/lib/security';
+import { validateConfiguredRepo, validateOrigin, validatePullRequestNumber } from '@/lib/security';
 
 export async function POST(request: Request) {
   try {
@@ -17,9 +17,17 @@ export async function POST(request: Request) {
     }
 
     const config = await loadConfig();
+    let configuredRepo: string;
+    let number: number;
+    try {
+      configuredRepo = validateConfiguredRepo(repoFullName, config.monitoredRepos);
+      number = validatePullRequestNumber(prNumber);
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid request.' }, { status: 400 });
+    }
     const token = config.githubToken || process.env.GITHUB_TOKEN;
 
-    const result = await undraftPullRequest(repoFullName, Number(prNumber), token);
+    const result = await undraftPullRequest(configuredRepo, number, token);
 
     return NextResponse.json({
       success: true,
