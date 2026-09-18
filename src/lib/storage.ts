@@ -151,10 +151,10 @@ For each issue:
   },
   {
     id: 'rebase-user-pr',
-    name: 'Rebase User PR Branch',
+    name: 'Solve Conflicts Against Main',
     description: 'PR owned by user that has merge conflicts.',
     enabled: true,
-    buttonLabel: 'Rebase',
+    buttonLabel: 'Solve conflicts against main',
     buttonIcon: 'GitBranch',
     buttonColor: 'amber',
     actionType: 'spawn_agent',
@@ -162,7 +162,7 @@ For each issue:
       prOwnedByCurrentUser: true,
       hasMergeConflicts: true,
     },
-    promptTemplate: `Rebase branch '{branch}' for PR #{pr_number} ({pr_title}) in repository {repo_name} onto main. \n\nFetch origin, run git rebase origin/{base_branch}, resolve any merge conflicts, and verify clean test execution. Don't look at only git-identified conflicts, but also at structural intention. Take a step back and assess the codebase as a whole. Does anything break with the merge? Are any intentions, from either side, lost?\n\nOnce you’re done, force push the changes to the branch and post a simple comment with just "Rebased".`,
+    promptTemplate: `Solve conflicts against {base_branch} for PR #{pr_number} ({pr_title}) in repository {repo_name} on branch '{branch}'.\n\nFetch origin and merge origin/{base_branch} into '{branch}'. Solve conflicts and any issues the best way you can. Don't look at only git-identified conflicts, but also at structural intention. Take a step back and assess the codebase as a whole. Does anything break with the merge? Are any intentions, from either side, lost? Verify clean test execution.\n\nOnly resort to rebasing (git rebase origin/{base_branch}) if merging does not work or if nothing else works.\n\nOnce you’re done, push the changes to the branch (only force push if you had to resort to rebasing) and post a comment on the PR explaining how conflicts were resolved.`,
   },
   {
     id: 'rebase-non-user-pr',
@@ -264,6 +264,19 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
           }
           if (updated.id === 'rebase-non-user-pr' && updated.buttonLabel === 'Rebase') {
             updated = { ...updated, buttonLabel: 'Ask author to rebase' };
+            hasChanges = true;
+          }
+          if (updated.id === 'rebase-user-pr' && (updated.buttonLabel === 'Rebase' || updated.name === 'Rebase User PR Branch')) {
+            const defaultConflictRule = DEFAULT_RULES.find((dr) => dr.id === 'rebase-user-pr');
+            updated = {
+              ...updated,
+              name: defaultConflictRule?.name || 'Solve Conflicts Against Main',
+              buttonLabel: defaultConflictRule?.buttonLabel || 'Solve conflicts against main',
+              promptTemplate:
+                updated.promptTemplate.includes('run git rebase origin/{base_branch}')
+                  ? (defaultConflictRule?.promptTemplate || updated.promptTemplate)
+                  : updated.promptTemplate,
+            };
             hasChanges = true;
           }
           return updated;
