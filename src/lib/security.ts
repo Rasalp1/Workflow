@@ -73,7 +73,6 @@ export function validateLocalPath(localPath: string): void {
  */
 export function validateOrigin(request: Request): void {
   const origin = request.headers.get('origin');
-  const host = request.headers.get('host');
 
   if (!origin) {
     throw new Error('Missing Origin header on state-changing request.');
@@ -82,9 +81,6 @@ export function validateOrigin(request: Request): void {
   try {
     const originUrl = new URL(origin);
     const allowedHosts = ['localhost', '127.0.0.1', '[::1]'];
-    if (host) {
-      allowedHosts.push(host.split(':')[0]);
-    }
 
     if (!allowedHosts.includes(originUrl.hostname)) {
       throw new Error(`Forbidden cross-origin request from "${origin}"`);
@@ -93,6 +89,26 @@ export function validateOrigin(request: Request): void {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`Invalid origin header: ${msg}`);
   }
+}
+
+/** Restricts GitHub mutations to repositories explicitly configured by the user. */
+export function validateConfiguredRepo(repoFullName: unknown, monitoredRepos: readonly string[]): string {
+  if (typeof repoFullName !== 'string' || !/^[\w.-]+\/[\w.-]+$/.test(repoFullName)) {
+    throw new Error('Repository must use the "owner/repo" format.');
+  }
+  if (!monitoredRepos.includes(repoFullName)) {
+    throw new Error(`Repository "${repoFullName}" is not configured for this dashboard.`);
+  }
+  return repoFullName;
+}
+
+/** Accepts only a concrete, positive GitHub pull-request number. */
+export function validatePullRequestNumber(value: unknown): number {
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(number) || number <= 0) {
+    throw new Error('Pull request number must be a positive integer.');
+  }
+  return number;
 }
 
 /**

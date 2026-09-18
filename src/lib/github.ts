@@ -37,6 +37,20 @@ const prDetailsCache = new Map<string, PullRequest>();
 const mergeHistoryCache = new Map<string, { merged: MergeHistoryEntry[]; closed: MergeHistoryEntry[]; timestamp: number }>();
 const MERGE_HISTORY_CACHE_TTL_MS = 30000;
 
+function parseRepoFullName(repoFullName: string): [string, string] {
+  if (typeof repoFullName !== 'string' || !/^[\w.-]+\/[\w.-]+$/.test(repoFullName)) {
+    throw new Error(`Invalid repo format "${repoFullName}". Expected "owner/repo"`);
+  }
+  return repoFullName.split('/') as [string, string];
+}
+
+function validatePRNumber(prNumber: number): number {
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    throw new Error('Pull request number must be a positive integer.');
+  }
+  return prNumber;
+}
+
 export function clearGitHubCache() {
   repoPrsCache.clear();
   prDetailsCache.clear();
@@ -130,10 +144,7 @@ export async function getRepoPullRequests(
   token?: string,
   forceRefresh = false
 ): Promise<PullRequest[]> {
-  const [owner, repo] = repoFullName.split('/');
-  if (!owner || !repo) {
-    throw new Error(`Invalid repo format "${repoFullName}". Expected "owner/repo"`);
-  }
+  const [owner, repo] = parseRepoFullName(repoFullName);
 
   // Check short TTL cache for this repo unless explicitly forced
   const cachedRepo = repoPrsCache.get(repoFullName);
@@ -331,10 +342,7 @@ export async function getRepoPRHistory(
   token?: string,
   forceRefresh = false
 ): Promise<{ merged: MergeHistoryEntry[]; closed: MergeHistoryEntry[] }> {
-  const [owner, repo] = repoFullName.split('/');
-  if (!owner || !repo) {
-    throw new Error(`Invalid repo format "${repoFullName}". Expected "owner/repo"`);
-  }
+  const [owner, repo] = parseRepoFullName(repoFullName);
 
   const cached = mergeHistoryCache.get(repoFullName);
   if (!forceRefresh && cached && Date.now() - cached.timestamp < MERGE_HISTORY_CACHE_TTL_MS) {
@@ -536,7 +544,8 @@ export async function postPRComment(
   commentBody: string,
   token?: string
 ): Promise<{ success: boolean; commentUrl?: string }> {
-  const [owner, repo] = repoFullName.split('/');
+  const [owner, repo] = parseRepoFullName(repoFullName);
+  validatePRNumber(prNumber);
   const authToken = token || process.env.GITHUB_TOKEN;
   if (!authToken) {
     throw new Error('GitHub token is required to post comments.');
@@ -567,10 +576,8 @@ export async function mergePullRequest(
   commitTitle?: string,
   token?: string
 ): Promise<{ success: boolean; message: string; sha?: string }> {
-  const [owner, repo] = repoFullName.split('/');
-  if (!owner || !repo) {
-    throw new Error(`Invalid repo format "${repoFullName}". Expected "owner/repo"`);
-  }
+  const [owner, repo] = parseRepoFullName(repoFullName);
+  validatePRNumber(prNumber);
   const authToken = token || process.env.GITHUB_TOKEN;
   if (!authToken) {
     throw new Error('GitHub token is required to merge pull requests.');
@@ -607,10 +614,8 @@ export async function undraftPullRequest(
   prNumber: number,
   token?: string
 ): Promise<{ success: boolean; message: string }> {
-  const [owner, repo] = repoFullName.split('/');
-  if (!owner || !repo) {
-    throw new Error(`Invalid repo format "${repoFullName}". Expected "owner/repo"`);
-  }
+  const [owner, repo] = parseRepoFullName(repoFullName);
+  validatePRNumber(prNumber);
   const authToken = token || process.env.GITHUB_TOKEN;
   if (!authToken) {
     throw new Error('GitHub token is required to update pull request draft status.');

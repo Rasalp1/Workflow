@@ -4,6 +4,8 @@
 
 Workflow PR Viewer operates as a **local-first web application**. It runs on your workstation (`localhost`) and interfaces directly with local terminal processes, Git worktrees, and the GitHub REST API using your local access tokens.
 
+The bundled `dev` and `start` commands bind to `127.0.0.1`. Workflow has no user authentication system, so do not expose it on a LAN, public interface, reverse proxy, or hosted platform without adding authentication and authorization first. Write operations are restricted to repositories listed in the local monitored-repository configuration.
+
 ### Security Guards Implemented
 
 1. **CSRF & Origin Verification**: API endpoints enforce strict local origin verification ([`src/lib/security.ts`](src/lib/security.ts)) to block unauthorized cross-origin requests from external web pages.

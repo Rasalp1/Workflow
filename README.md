@@ -11,7 +11,7 @@
 <p align="center">
   <b>A local-first, developer-centric PR management dashboard & CLI AI agent dispatcher.</b>
   <br />
-  Streamline pull request code reviews, automate review readiness evaluation with customizable logic gates, and spawn AI coding agents (Codex, Claude, Cursor) directly inside local Git worktrees.
+  Streamline pull request code reviews, automate review readiness evaluation with customizable logic gates, and spawn AI coding agents (Codex or Claude) directly inside local Git worktrees.
 </p>
 
 </div>
@@ -123,7 +123,7 @@ Workflow/
 | **Operating System** | **macOS** (Required for AppleScript IDE & Terminal launching) |
 | **Node.js** | **v20.0.0** or higher |
 | **Package Manager** | **npm** (v10+) |
-| **GitHub Access Token** | Personal Access Token with `repo` scope |
+| **GitHub Access Token** | Fine-grained token limited to the configured repositories; metadata read access is required, and pull-request write access is required for comments, merges, and draft changes |
 | **CLI AI Agents (Optional)** | Installed `codex` or `claude` CLI binary |
 
 ---
@@ -170,7 +170,7 @@ The suite builds the app, starts it on port 3100, and checks desktop and phone l
 Configuration is managed via `.env.local` in the project root:
 
 ```env
-# 1. GitHub Personal Access Token (Requires 'repo' scope)
+# 1. GitHub token (fine-grained token limited to the configured repositories)
 GITHUB_TOKEN=ghp_your_github_personal_access_token_here
 
 # 2. Default CLI Agent Executable ("codex" or "claude")

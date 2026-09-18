@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { postPRComment } from '@/lib/github';
 import { loadConfig } from '@/lib/storage';
-import { validateOrigin } from '@/lib/security';
+import { validateConfiguredRepo, validateOrigin, validatePullRequestNumber } from '@/lib/security';
 
 export async function POST(request: Request) {
   try {
@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { repoFullName, prNumber, commentBody } = body;
 
-    if (!repoFullName || !prNumber || !commentBody) {
+    if (!repoFullName || !prNumber || typeof commentBody !== 'string' || !commentBody.trim() || commentBody.length > 20_000) {
       return NextResponse.json(
         { error: 'repoFullName, prNumber, and commentBody are required' },
         { status: 400 }
@@ -17,9 +17,17 @@ export async function POST(request: Request) {
     }
 
     const config = await loadConfig();
+    let configuredRepo: string;
+    let number: number;
+    try {
+      configuredRepo = validateConfiguredRepo(repoFullName, config.monitoredRepos);
+      number = validatePullRequestNumber(prNumber);
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid request.' }, { status: 400 });
+    }
     const token = config.githubToken || process.env.GITHUB_TOKEN;
 
-    const result = await postPRComment(repoFullName, prNumber, commentBody, token);
+    const result = await postPRComment(configuredRepo, number, commentBody, token);
 
     return NextResponse.json({
       success: true,
