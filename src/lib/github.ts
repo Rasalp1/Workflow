@@ -1,4 +1,5 @@
 import { MergeHistoryEntry, PRComment, PRCommit, PullRequest } from '@/types';
+import { isBotComment } from './botDetection';
 
 export class GitHubRateLimitError extends Error {
   public resetAt: Date;
@@ -228,12 +229,14 @@ export async function getRepoPullRequests(
           login: (c.user as { login: string })?.login || 'unknown',
           avatar_url: (c.user as { avatar_url: string })?.avatar_url || '',
           html_url: (c.user as { html_url: string })?.html_url || '',
+          type: (c.user as { type?: string })?.type,
         },
         body: (c.body as string) || '',
         created_at: (c.created_at as string) || new Date().toISOString(),
         updated_at: (c.updated_at as string) || new Date().toISOString(),
         html_url: (c.html_url as string) || '',
         is_review_comment: false,
+        performed_via_github_app: (c.performed_via_github_app as Record<string, unknown>) || null,
       }));
 
       const formattedReviewComments: PRComment[] = (reviewComments || []).map((c: Record<string, unknown>) => ({
@@ -242,6 +245,7 @@ export async function getRepoPullRequests(
           login: (c.user as { login: string })?.login || 'unknown',
           avatar_url: (c.user as { avatar_url: string })?.avatar_url || '',
           html_url: (c.user as { html_url: string })?.html_url || '',
+          type: (c.user as { type?: string })?.type,
         },
         body: (c.body as string) || '',
         created_at: (c.created_at as string) || new Date().toISOString(),
@@ -251,6 +255,7 @@ export async function getRepoPullRequests(
         position: c.position as number | undefined,
         line: c.line as number | undefined,
         is_review_comment: true,
+        performed_via_github_app: (c.performed_via_github_app as Record<string, unknown>) || null,
       }));
 
       // Convert ALL PR review submissions (Approved, Changes Requested, Commented, etc.) into comments
@@ -266,6 +271,7 @@ export async function getRepoPullRequests(
             login: (r.user as { login: string })?.login || 'unknown',
             avatar_url: (r.user as { avatar_url: string })?.avatar_url || '',
             html_url: (r.user as { html_url: string })?.html_url || '',
+            type: (r.user as { type?: string })?.type,
           },
           body: rawBody.trim().length > 0 ? rawBody : fallbackBody,
           created_at: ((r.submitted_at || r.created_at) as string) || new Date().toISOString(),
@@ -276,7 +282,12 @@ export async function getRepoPullRequests(
         };
       });
 
-      const allComments = [...formattedIssueComments, ...formattedReviewComments, ...formattedReviews].sort(
+      // Ignore messages/comments from bots (e.g. GitHub actions, release-please, Netlify bot)
+      const nonBotIssueComments = formattedIssueComments.filter((c) => !isBotComment(c));
+      const nonBotReviewComments = formattedReviewComments.filter((c) => !isBotComment(c));
+      const nonBotReviews = formattedReviews.filter((r) => !isBotComment(r));
+
+      const allComments = [...nonBotIssueComments, ...nonBotReviewComments, ...nonBotReviews].sort(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
 
@@ -319,7 +330,7 @@ export async function getRepoPullRequests(
         repo_name: repo,
         repo_full_name: repoFullName,
         comments_count: allComments.length,
-        review_comments_count: formattedReviewComments.length + formattedReviews.length,
+        review_comments_count: nonBotReviewComments.length + nonBotReviews.length,
         comments: allComments,
         commits: formattedCommits,
         last_comment: lastComment,

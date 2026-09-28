@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ActiveAgentInfo, AgentType, AppConfig, EvaluatedGateResult, LogicalGateRule, PRWithGates } from '@/types';
 import { isPrAwaitingComment } from '@/lib/logicGates';
+import { getEffectiveLastComment } from '@/lib/botDetection';
 import { Button } from '@/components/ui/Button';
 import { Notice } from '@/components/ui/Notice';
 import { Header, WorkspaceBrand } from '@/components/Header';
@@ -216,8 +217,10 @@ export default function Dashboard() {
       const targetUser = (currentUser || '').toLowerCase();
       if (!targetUser) return b.pr.number - a.pr.number;
 
-      const aLastUser = (a.pr.last_comment?.user?.login || a.pr.user.login).toLowerCase();
-      const bLastUser = (b.pr.last_comment?.user?.login || b.pr.user.login).toLowerCase();
+      const aEffectiveLastComment = getEffectiveLastComment(a.pr.comments, a.pr.last_comment);
+      const bEffectiveLastComment = getEffectiveLastComment(b.pr.comments, b.pr.last_comment);
+      const aLastUser = (aEffectiveLastComment?.user?.login || a.pr.user.login).toLowerCase();
+      const bLastUser = (bEffectiveLastComment?.user?.login || b.pr.user.login).toLowerCase();
 
       const aIsUserLast = aLastUser === targetUser;
       const bIsUserLast = bLastUser === targetUser;

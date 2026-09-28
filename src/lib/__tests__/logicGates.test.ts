@@ -614,5 +614,169 @@ describe('Logic Gates Evaluator', () => {
       assert.strictEqual(result.passed, true);
     });
   });
+
+  describe('Ignoring bot comments (GitHub bot, release-please, Netlify)', () => {
+    it('does not mark user PR as awaiting comment when Netlify bot posts a preview comment after user', () => {
+      const prWithNetlifyBot: PullRequest = {
+        ...dummyPR,
+        user: { login: 'alice', avatar_url: '', html_url: '' },
+        comments: [
+          {
+            id: 1,
+            user: { login: 'alice', avatar_url: '', html_url: '' },
+            body: 'Pushed updates',
+            created_at: '2026-09-28T10:00:00Z',
+            updated_at: '2026-09-28T10:00:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+          {
+            id: 2,
+            user: { login: 'netlify[bot]', avatar_url: '', html_url: '' },
+            body: '### Deploy Preview for *app* ready!\n\nBuilt with commit 1234. Powered by Netlify',
+            created_at: '2026-09-28T10:05:00Z',
+            updated_at: '2026-09-28T10:05:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+        ],
+        last_comment: {
+          id: 2,
+          user: { login: 'netlify[bot]', avatar_url: '', html_url: '' },
+          body: '### Deploy Preview for *app* ready!\n\nBuilt with commit 1234. Powered by Netlify',
+          created_at: '2026-09-28T10:05:00Z',
+          updated_at: '2026-09-28T10:05:00Z',
+          html_url: '',
+          is_review_comment: false,
+        },
+      };
+
+      // Alice owns the PR and was the last human to comment; netlify bot message must be ignored
+      const awaiting = isPrAwaitingComment(prWithNetlifyBot, 'alice');
+      assert.strictEqual(awaiting, false);
+    });
+
+    it('does not mark user PR as awaiting comment when github-actions bot or release-please comments after user', () => {
+      const prWithBots: PullRequest = {
+        ...dummyPR,
+        user: { login: 'alice', avatar_url: '', html_url: '' },
+        comments: [
+          {
+            id: 1,
+            user: { login: 'alice', avatar_url: '', html_url: '' },
+            body: 'Initial PR commit',
+            created_at: '2026-09-28T10:00:00Z',
+            updated_at: '2026-09-28T10:00:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+          {
+            id: 2,
+            user: { login: 'github-actions[bot]', avatar_url: '', html_url: '' },
+            body: 'Automated test suite passed',
+            created_at: '2026-09-28T10:05:00Z',
+            updated_at: '2026-09-28T10:05:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+          {
+            id: 3,
+            user: { login: 'release-please[bot]', avatar_url: '', html_url: '' },
+            body: '<!-- release-please: pending -->',
+            created_at: '2026-09-28T10:10:00Z',
+            updated_at: '2026-09-28T10:10:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+        ],
+        last_comment: {
+          id: 3,
+          user: { login: 'release-please[bot]', avatar_url: '', html_url: '' },
+          body: '<!-- release-please: pending -->',
+          created_at: '2026-09-28T10:10:00Z',
+          updated_at: '2026-09-28T10:10:00Z',
+          html_url: '',
+          is_review_comment: false,
+        },
+      };
+
+      const awaiting = isPrAwaitingComment(prWithBots, 'alice');
+      assert.strictEqual(awaiting, false);
+    });
+
+    it('uses the last human comment author and body in formatPromptTemplate when bot commented afterwards', () => {
+      const prWithHumanAndBot: PullRequest = {
+        ...dummyPR,
+        comments: [
+          {
+            id: 1,
+            user: { login: 'bob', avatar_url: '', html_url: '' },
+            body: 'Please fix the edge case with null values',
+            created_at: '2026-09-28T10:00:00Z',
+            updated_at: '2026-09-28T10:00:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+          {
+            id: 2,
+            user: { login: 'netlify[bot]', avatar_url: '', html_url: '' },
+            body: 'Deploy preview ready!',
+            created_at: '2026-09-28T10:05:00Z',
+            updated_at: '2026-09-28T10:05:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+        ],
+        last_comment: {
+          id: 2,
+          user: { login: 'netlify[bot]', avatar_url: '', html_url: '' },
+          body: 'Deploy preview ready!',
+          created_at: '2026-09-28T10:05:00Z',
+          updated_at: '2026-09-28T10:05:00Z',
+          html_url: '',
+          is_review_comment: false,
+        },
+      };
+
+      const template = 'Latest by @{last_comment_author}: "{last_comment_body}"';
+      const formatted = formatPromptTemplate(template, prWithHumanAndBot);
+      assert.strictEqual(
+        formatted,
+        'Latest by @bob: "Please fix the edge case with null values"'
+      );
+    });
+
+    it('does not treat bot comments as a distinct second reviewer in hasTwoConsecutiveCommentsByOthers', () => {
+      const prWithReviewerAndBot: PullRequest = {
+        ...dummyPR,
+        user: { login: 'charlie', avatar_url: '', html_url: '' },
+        comments: [
+          {
+            id: 1,
+            user: { login: 'bob', avatar_url: '', html_url: '' },
+            body: 'First human reviewer comment',
+            created_at: '2026-09-28T10:00:00Z',
+            updated_at: '2026-09-28T10:00:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+          {
+            id: 2,
+            user: { login: 'netlify[bot]', avatar_url: '', html_url: '' },
+            body: 'Deploy preview ready!',
+            created_at: '2026-09-28T10:05:00Z',
+            updated_at: '2026-09-28T10:05:00Z',
+            html_url: '',
+            is_review_comment: false,
+          },
+        ],
+      };
+
+      // For user alice: bob commented and netlify bot commented.
+      // Netlify bot must NOT count as a second reviewer!
+      const twoReviewers = hasTwoConsecutiveCommentsByOthers(prWithReviewerAndBot, 'alice');
+      assert.strictEqual(twoReviewers, false);
+    });
+  });
 });
 

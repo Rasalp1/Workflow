@@ -6,6 +6,7 @@ import { GateIcon } from "@/components/ui/GateIcon";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { MergeConfirmModal } from "@/components/MergeConfirmModal";
 import { isPrAwaitingComment } from "@/lib/logicGates";
+import { filterNonBotComments, getEffectiveLastComment } from "@/lib/botDetection";
 import { checkRebaseStatus } from "@/lib/rebaseDetector";
 import {
   GitPullRequest,
@@ -84,6 +85,12 @@ export const PRCard: React.FC<PRCardProps> = ({
     (g) => g.rule.id === "address-issues",
   );
 
+  const displayComments = filterNonBotComments(pr.comments || []);
+  const effectiveLastComment = getEffectiveLastComment(pr.comments, pr.last_comment);
+  const hasComments = Boolean(
+    displayComments.length > 0 || effectiveLastComment,
+  );
+
   const addressLatestGate = evaluatedGates.find(
     (g) => g.rule.id === "address-latest-comment",
   ) || {
@@ -101,7 +108,7 @@ export const PRCard: React.FC<PRCardProps> = ({
       promptTemplate: `Address review feedback on PR #{pr_number} ({pr_title}) based ONLY on the recentmost comment by @{last_comment_author}:\n\n"{last_comment_body}"\n\nFocus specifically and solely on addressing the issues and feedback raised in this most recent comment, without getting distracted by previous conversation history. Check the issues raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to address the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a clear comment to the PR explaining what you did and why.`,
     },
     passed: false,
-    generatedPrompt: `Address review feedback on PR #${pr.number} (${pr.title}) based ONLY on the recentmost comment by @${pr.last_comment?.user.login || "reviewer"}:\n\n"${pr.last_comment?.body || "No recent comment"}"\n\nFocus specifically and solely on addressing the issues and feedback raised in this most recent comment, without getting distracted by previous conversation history. Check the issues raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to address the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a clear comment to the PR explaining what you did and why.`,
+    generatedPrompt: `Address review feedback on PR #${pr.number} (${pr.title}) based ONLY on the recentmost comment by @${effectiveLastComment?.user.login || "reviewer"}:\n\n"${effectiveLastComment?.body || "No recent comment"}"\n\nFocus specifically and solely on addressing the issues and feedback raised in this most recent comment, without getting distracted by previous conversation history. Check the issues raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to address the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a clear comment to the PR explaining what you did and why.`,
     targetAgent: "codex",
   };
   const hasPassedAddressLatest = passedGates.some(
@@ -132,15 +139,11 @@ export const PRCard: React.FC<PRCardProps> = ({
       promptTemplate: `Review PR #{pr_number} ({pr_title}) against branch {base_branch}, focusing specifically on the author’s recentmost response by @{last_comment_author}:\n\n"{last_comment_body}"\n\nWe’re the reviewer. Instead of re-evaluating the full historical comment backlog, focus specifically on this latest update and comment. Has the author addressed the specific points raised in this recentmost feedback? Are the claimed fixes in place in the code, or are they pushing back rightfully? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
     },
     passed: false,
-    generatedPrompt: `Review PR #${pr.number} (${pr.title}) against branch ${pr.base.ref}, focusing specifically on the author’s recentmost response by @${pr.last_comment?.user.login || "author"}:\n\n"${pr.last_comment?.body || "No recent comment"}"\n\nWe’re the reviewer. Instead of re-evaluating the full historical comment backlog, focus specifically on this latest update and comment. Has the author addressed the specific points raised in this recentmost feedback? Are the claimed fixes in place in the code, or are they pushing back rightfully? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
+    generatedPrompt: `Review PR #${pr.number} (${pr.title}) against branch ${pr.base.ref}, focusing specifically on the author’s recentmost response by @${effectiveLastComment?.user.login || "author"}:\n\n"${effectiveLastComment?.body || "No recent comment"}"\n\nWe’re the reviewer. Instead of re-evaluating the full historical comment backlog, focus specifically on this latest update and comment. Has the author addressed the specific points raised in this recentmost feedback? Are the claimed fixes in place in the code, or are they pushing back rightfully? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
     targetAgent: "codex",
   };
   const hasPassedReviewLatest = passedGates.some(
     (g) => g.rule.id === "review-latest-comment",
-  );
-
-  const hasComments = Boolean(
-    (pr.comments && pr.comments.length > 0) || pr.last_comment,
   );
   const isOwner = currentUser
     ? pr.user.login.toLowerCase() === currentUser.toLowerCase()
@@ -480,21 +483,21 @@ export const PRCard: React.FC<PRCardProps> = ({
           </div>
         )}
 
-        {pr.comments.length === 0 ? (
+        {displayComments.length === 0 ? (
           <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-400 italic text-center">
             No discussion comments recorded for this PR yet.
           </div>
         ) : (
           <div className="comment-thread" id={`${elementId}-comment-thread`}>
-            {pr.comments.map((comment) => {
+            {displayComments.map((comment) => {
               const rebaseStatus = checkRebaseStatus(comment, pr.commits);
 
               return (
                 <div
                   key={`${comment.id}-${comment.review_state || (comment.is_review_comment ? "rev" : "iss")}`}
-                  className={`discussion-comment space-y-3 ${comment === pr.comments[pr.comments.length - 1] ? "discussion-comment--latest" : ""}`}
+                  className={`discussion-comment space-y-3 ${comment === effectiveLastComment ? "discussion-comment--latest" : ""}`}
                 >
-                  {comment === pr.comments[pr.comments.length - 1] && (
+                  {comment === effectiveLastComment && (
                     <span className="latest-comment-label">Latest update</span>
                   )}
                   {/* Comment Author Header */}

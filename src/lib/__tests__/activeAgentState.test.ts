@@ -74,6 +74,45 @@ describe('active agent state reconciliation', () => {
     );
   });
 
+  it('clears an active agent when user commented and a bot commented afterwards with no passing gate', () => {
+    const item = prWithGates({
+      comments: [
+        {
+          id: 1,
+          user: { login: 'alice', avatar_url: '', html_url: '' },
+          body: 'Addressed feedback and pushed',
+          created_at: '2026-08-17T09:00:00Z',
+          updated_at: '2026-08-17T09:00:00Z',
+          html_url: '',
+          is_review_comment: false,
+        },
+        {
+          id: 2,
+          user: { login: 'netlify[bot]', avatar_url: '', html_url: '' },
+          body: 'Deploy preview ready!',
+          created_at: '2026-08-17T09:05:00Z',
+          updated_at: '2026-08-17T09:05:00Z',
+          html_url: '',
+          is_review_comment: false,
+        },
+      ],
+      last_comment: {
+        id: 2,
+        user: { login: 'netlify[bot]', avatar_url: '', html_url: '' },
+        body: 'Deploy preview ready!',
+        created_at: '2026-08-17T09:05:00Z',
+        updated_at: '2026-08-17T09:05:00Z',
+        html_url: '',
+        is_review_comment: false,
+      },
+    });
+
+    assert.deepStrictEqual(
+      getActiveAgentCardIdsToClear({ 'pr-card-org/repo-42': activeAgent }, [item], 'alice'),
+      ['pr-card-org/repo-42']
+    );
+  });
+
   it('keeps the active agent when a gate still passes', () => {
     const item = prWithGates(
       {

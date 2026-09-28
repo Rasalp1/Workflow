@@ -13,6 +13,7 @@ export interface PRUser {
   login: string;
   avatar_url: string;
   html_url: string;
+  type?: string;
 }
 
 export interface PRComment {
@@ -27,6 +28,7 @@ export interface PRComment {
   line?: number;
   is_review_comment: boolean;
   review_state?: string;
+  performed_via_github_app?: Record<string, unknown> | null;
 }
 
 export interface PRCommit {

@@ -1,4 +1,5 @@
 import type { AgentType, EvaluatedGateResult, LogicalGateRule, PullRequest } from '../types/index.ts';
+import { filterNonBotComments, getEffectiveLastComment } from './botDetection.ts';
 
 export function evaluateGateRule(
   rule: LogicalGateRule,
@@ -18,6 +19,8 @@ export function evaluateGateRule(
   let passed = true;
 
   const effectiveUser = currentUserLogin ? currentUserLogin.toLowerCase() : null;
+  const effectiveComments = filterNonBotComments(pr.comments || []);
+  const effectiveLastComment = getEffectiveLastComment(pr.comments, pr.last_comment);
 
   // Condition: prOwnedByCurrentUser (PR owned by user)
   if (rule.conditions.prOwnedByCurrentUser) {
@@ -33,9 +36,9 @@ export function evaluateGateRule(
     }
   }
 
-  // Condition: hasNoComments (PR has zero comments)
+  // Condition: hasNoComments (PR has zero non-bot comments)
   if (rule.conditions.hasNoComments) {
-    if ((pr.comments || []).length > 0) {
+    if (effectiveComments.length > 0) {
       passed = false;
     }
   }
@@ -45,7 +48,7 @@ export function evaluateGateRule(
     if (!effectiveUser) {
       passed = false;
     } else {
-      const hasUserComment = (pr.comments || []).some(
+      const hasUserComment = effectiveComments.some(
         (c) => c.user.login.toLowerCase() === effectiveUser
       );
       if (!hasUserComment) {
@@ -55,12 +58,12 @@ export function evaluateGateRule(
   }
 
   // Condition 1: lastCommentNotCurrentUser
-  // Treat the PR description (PR author) as the last activity when there are no comments.
+  // Treat the PR description (PR author) as the last activity when there are no non-bot comments.
   if (rule.conditions.lastCommentNotCurrentUser) {
     if (!effectiveUser) {
       passed = false;
     } else {
-      const lastActivityUser = (pr.last_comment?.user.login ?? pr.user.login).toLowerCase();
+      const lastActivityUser = (effectiveLastComment?.user.login ?? pr.user.login).toLowerCase();
       if (lastActivityUser === effectiveUser) {
         passed = false;
       }
@@ -77,8 +80,8 @@ export function evaluateGateRule(
   // Condition 2: lastCommentAuthorLogin
   if (rule.conditions.lastCommentAuthorLogin) {
     if (
-      !pr.last_comment ||
-      pr.last_comment.user.login.toLowerCase() !== rule.conditions.lastCommentAuthorLogin.toLowerCase()
+      !effectiveLastComment ||
+      effectiveLastComment.user.login.toLowerCase() !== rule.conditions.lastCommentAuthorLogin.toLowerCase()
     ) {
       passed = false;
     }
@@ -86,7 +89,7 @@ export function evaluateGateRule(
 
   // Condition 3: hasUnresolvedComments
   if (rule.conditions.hasUnresolvedComments) {
-    if (pr.comments.length === 0) {
+    if (effectiveComments.length === 0) {
       passed = false;
     }
   }
@@ -139,10 +142,13 @@ export function evaluateGateRule(
 }
 
 export function formatPromptTemplate(template: string, pr: PullRequest): string {
-  const lastCommentAuthor = pr.last_comment?.user.login || 'Unknown';
-  const lastCommentBody = pr.last_comment?.body || 'No recent comment';
+  const effectiveLastComment = getEffectiveLastComment(pr.comments, pr.last_comment);
+  const effectiveComments = filterNonBotComments(pr.comments || []);
 
-  const commentsSummary = pr.comments
+  const lastCommentAuthor = effectiveLastComment?.user.login || 'Unknown';
+  const lastCommentBody = effectiveLastComment?.body || 'No recent comment';
+
+  const commentsSummary = effectiveComments
     .map((c) => `- @${c.user.login} (${c.is_review_comment ? 'Code Review' : 'Comment'}): ${c.body}`)
     .join('\n');
 
@@ -164,6 +170,7 @@ export function formatPromptTemplate(template: string, pr: PullRequest): string 
  * Checks if there are 2 comments in a row by 2 distinct users (neither of which is the current user)
  * since the last comment made by the current user (or across all comments if the current user never commented).
  * This indicates that the PR is actively being reviewed or discussed by other individuals.
+ * Bot messages/comments are ignored.
  *
  * NOTE: If the current user previously participated/commented on this PR and the latest comment
  * is from the PR author, it indicates that the author has addressed the review feedback
@@ -175,7 +182,7 @@ export function hasTwoConsecutiveCommentsByOthers(
 ): boolean {
   if (!currentUserLogin) return false;
   const effectiveUser = currentUserLogin.toLowerCase();
-  const comments = pr.comments || [];
+  const comments = filterNonBotComments(pr.comments || []);
   if (comments.length < 2) return false;
 
   // Find the index of the last comment made by the current user
@@ -191,7 +198,8 @@ export function hasTwoConsecutiveCommentsByOthers(
   // is from the PR author, the author has addressed feedback.
   // The PR is therefore relevant again for the current user's follow-up review.
   const prAuthor = pr.user.login.toLowerCase();
-  const lastCommentUser = (pr.last_comment?.user?.login ?? comments[comments.length - 1]?.user?.login)?.toLowerCase();
+  const effectiveLast = getEffectiveLastComment(comments, pr.last_comment);
+  const lastCommentUser = (effectiveLast?.user?.login ?? comments[comments.length - 1]?.user?.login)?.toLowerCase();
   if (lastUserCommentIndex >= 0 && lastCommentUser === prAuthor) {
     return false;
   }
@@ -224,7 +232,8 @@ export function isPrAwaitingComment(
 
   const effectiveUser = currentUserLogin.toLowerCase();
   const isOwner = pr.user.login.toLowerCase() === effectiveUser;
-  const lastUser = (pr.last_comment?.user.login ?? pr.user.login).toLowerCase();
+  const effectiveLastComment = getEffectiveLastComment(pr.comments, pr.last_comment);
+  const lastUser = (effectiveLastComment?.user.login ?? pr.user.login).toLowerCase();
   const notOurLatestComment = lastUser !== effectiveUser;
   const userOwnedWithConflict = isOwner && Boolean(pr.has_merge_conflicts);
 

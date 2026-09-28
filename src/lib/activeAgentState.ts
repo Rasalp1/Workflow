@@ -1,4 +1,5 @@
 import type { ActiveAgentInfo, PRWithGates } from '../types/index.ts';
+import { getEffectiveLastComment } from './botDetection.ts';
 
 /**
  * Finds locally tracked agent sessions that are no longer actionable for the
@@ -24,7 +25,8 @@ export function getActiveAgentCardIdsToClear(
     if (!prWithGates) return false;
 
     const { pr, evaluatedGates } = prWithGates;
-    const latestActivityUser = (pr.last_comment?.user.login ?? pr.user.login).toLowerCase();
+    const effectiveLastComment = getEffectiveLastComment(pr.comments, pr.last_comment);
+    const latestActivityUser = (effectiveLastComment?.user.login ?? pr.user.login).toLowerCase();
     const userHasLatestActivity = latestActivityUser === effectiveUser;
     const hasActionableGate = evaluatedGates.some((gate) => gate.passed);
 
