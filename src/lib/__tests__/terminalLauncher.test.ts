@@ -119,6 +119,39 @@ describe('Antigravity integrated terminal launcher', () => {
     );
   });
 
+  it('builds terminal command for ocr agent with --from <base> --to HEAD flag', async () => {
+    let generatedScript = '';
+    const runCommand = async (command: string): Promise<unknown> => {
+      if (command.startsWith('osascript ')) {
+        const scriptPath = command.match(/^osascript ["'](.+)["']$/)?.[1];
+        assert.ok(scriptPath);
+        generatedScript = await readFile(scriptPath, 'utf8');
+      }
+      return undefined;
+    };
+
+    const targetDir = '/Users/test/Projects/worktrees/feature-test';
+    const branchName = 'feature-test';
+    const baseBranch = 'staging';
+    const cliCommand = `git pull origin "${branchName}" && ocr review --from "${baseBranch}" --to HEAD`;
+
+    await openTerminalInAntigravity(
+      {
+        cleanRepoPath: '/Users/test/Projects/repo',
+        targetDir,
+        cliCommand,
+      },
+      { runCommand },
+    );
+
+    assert.ok(
+      generatedScript.includes(
+        `set cmdString to "cd \\"${targetDir}\\" && git pull origin \\"${branchName}\\" && ocr review --from \\"${baseBranch}\\" --to HEAD"`
+      ),
+      'Generated AppleScript should launch ocr review with --from staging --to HEAD flags',
+    );
+  });
+
   it('spawnWorktreeInAntigravity handles invalid paths gracefully', async () => {
     const result = await spawnWorktreeInAntigravity({
       repoPath: '/non/existent/path',

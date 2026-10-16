@@ -7,6 +7,7 @@ import {
   validateConfiguredRepo,
   validateLocalPath,
   validateOrigin,
+  validateAgentType,
 } from '../security.ts';
 
 describe('Security Utilities', () => {
@@ -97,6 +98,22 @@ describe('Security Utilities', () => {
       assert.strictEqual(validateConfiguredRepo('acme/product', ['acme/product']), 'acme/product');
       assert.throws(() => validateConfiguredRepo('acme/other', ['acme/product']), /not configured/i);
       assert.throws(() => validateConfiguredRepo('acme/product/extra', ['acme/product']), /owner\/repo/i);
+    });
+  });
+
+  describe('validateAgentType', () => {
+    it('accepts valid agent types', () => {
+      assert.strictEqual(validateAgentType('codex'), 'codex');
+      assert.strictEqual(validateAgentType('claude'), 'claude');
+      assert.strictEqual(validateAgentType('ocr'), 'ocr');
+    });
+
+    it('rejects unknown or invalid agent types', () => {
+      assert.throws(() => validateAgentType('unknown'), /Invalid agent type/i);
+      assert.throws(() => validateAgentType('bash'), /Invalid agent type/i);
+      assert.throws(() => validateAgentType(null), /Invalid agent type/i);
+      assert.throws(() => validateAgentType(undefined), /Invalid agent type/i);
+      assert.throws(() => validateAgentType(123), /Invalid agent type/i);
     });
   });
 });

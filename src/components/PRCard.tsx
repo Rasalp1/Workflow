@@ -145,6 +145,13 @@ export const PRCard: React.FC<PRCardProps> = ({
   const hasPassedReviewLatest = passedGates.some(
     (g) => g.rule.id === "review-latest-comment",
   );
+
+  const openCodeReviewGate = evaluatedGates.find(
+    (g) => g.rule.id === "opencode-review",
+  );
+  const hasPassedOpenCodeReview = passedGates.some(
+    (g) => g.rule.id === "opencode-review",
+  );
   const isOwner = currentUser
     ? pr.user.login.toLowerCase() === currentUser.toLowerCase()
     : evaluatedGates.some(
@@ -191,6 +198,7 @@ export const PRCard: React.FC<PRCardProps> = ({
             repoFullName: pr.repo_full_name,
             localPath: pr.local_path || "",
             branchName: pr.head.ref,
+            baseBranch: pr.base.ref,
             agent: preferredAgent,
             prNumber: pr.number,
           }),
@@ -816,6 +824,26 @@ export const PRCard: React.FC<PRCardProps> = ({
                     {reviewLatestGate.targetAgent}
                   </span>
                 )}
+              </button>
+            )}
+
+          {!hasPassedOpenCodeReview &&
+            openCodeReviewGate &&
+            openCodeReviewGate.rule.enabled !== false &&
+            !pr.is_draft &&
+            !isOwner && (
+              <button
+                onClick={() => onTriggerGate(prWithGates, openCodeReviewGate)}
+                className="gate-button gate-button--indigo"
+                title="Run Alibaba OpenCodeReview (OCR with Luna model) on this pull request"
+              >
+                <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                <span>
+                  {openCodeReviewGate.rule.buttonLabel || "OpenCode Review"}
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                  ocr
+                </span>
               </button>
             )}
 

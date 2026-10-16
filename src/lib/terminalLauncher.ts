@@ -19,6 +19,7 @@ export interface TerminalLauncherDependencies {
 export interface SpawnAgentOptions {
   repoPath: string;
   branchName?: string;
+  baseBranch?: string;
   agent: AgentType;
   prompt: string;
 }
@@ -26,6 +27,7 @@ export interface SpawnAgentOptions {
 export interface SpawnWorktreeOptions {
   repoPath: string;
   branchName: string;
+  baseBranch?: string;
   agent?: AgentType;
 }
 
@@ -207,6 +209,7 @@ end tell
 export async function spawnAgentInTerminal({
   repoPath,
   branchName,
+  baseBranch,
   agent,
   prompt,
 }: SpawnAgentOptions): Promise<{ success: boolean; message: string }> {
@@ -219,6 +222,7 @@ export async function spawnAgentInTerminal({
       targetDir = await ensureWorktree({ repoPath: cleanRepoPath, branchName });
     }
 
+    const cleanBaseBranch = baseBranch ? sanitizeBranchName(baseBranch) : '';
     const promptId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const promptFile = join(tmpdir(), `workflow-prompt-${promptId}.txt`);
     const runnerScript = join(tmpdir(), `workflow-runner-${promptId}.sh`);
@@ -229,11 +233,50 @@ export async function spawnAgentInTerminal({
 PROMPT_FILE=${JSON.stringify(promptFile)}
 TARGET_DIR=${JSON.stringify(targetDir)}
 AGENT=${JSON.stringify(agent)}
+BASE_BRANCH=${JSON.stringify(cleanBaseBranch)}
 
 cd "$TARGET_DIR" || exit 1
 PROMPT="$(cat "$PROMPT_FILE")"
 rm -f "$PROMPT_FILE" "$0"
-exec "$AGENT" "$PROMPT"
+if [ "$AGENT" = "ocr" ]; then
+  echo "⚡ Launching OpenCodeReview (Alibaba OCR with gpt-6-luna)..."
+  CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+  TARGET_BASE="$BASE_BRANCH"
+
+  if [ -z "$TARGET_BASE" ]; then
+    if git rev-parse --verify origin/main >/dev/null 2>&1; then
+      TARGET_BASE="origin/main"
+    elif git rev-parse --verify main >/dev/null 2>&1; then
+      TARGET_BASE="main"
+    elif git rev-parse --verify origin/master >/dev/null 2>&1; then
+      TARGET_BASE="origin/master"
+    elif git rev-parse --verify master >/dev/null 2>&1; then
+      TARGET_BASE="master"
+    fi
+  else
+    if git rev-parse --verify "origin/$TARGET_BASE" >/dev/null 2>&1; then
+      TARGET_BASE="origin/$TARGET_BASE"
+    fi
+  fi
+
+  RANGE_FLAGS=""
+  if [ -n "$TARGET_BASE" ] && [ "$CURRENT_BRANCH" != "$TARGET_BASE" ]; then
+    RANGE_FLAGS="--from $TARGET_BASE --to HEAD"
+  fi
+
+  if [ -n "$PROMPT" ]; then
+    ocr review $RANGE_FLAGS --background "$PROMPT"
+  else
+    ocr review $RANGE_FLAGS
+  fi
+  echo ""
+  echo "──────────────────────────────────────────────────────────────────"
+  echo "✓ OCR Code Review complete! Run 'ocr viewer' to browse results."
+  echo "──────────────────────────────────────────────────────────────────"
+  exec $SHELL
+else
+  exec "$AGENT" "$PROMPT"
+fi
 `;
 
     await writeFile(runnerScript, runnerContent, { mode: 0o755, encoding: 'utf8' });
@@ -272,6 +315,7 @@ export async function spawnWorktreeInAntigravity(
   {
     repoPath,
     branchName,
+    baseBranch,
     agent = 'codex',
   }: SpawnWorktreeOptions,
   dependencies: TerminalLauncherDependencies = {}
@@ -280,13 +324,23 @@ export async function spawnWorktreeInAntigravity(
     validateLocalPath(repoPath);
     const cleanRepoPath = repoPath.replace(/\/$/, '');
     const cleanBranch = sanitizeBranchName(branchName);
+    const cleanBaseBranch = baseBranch ? sanitizeBranchName(baseBranch) : undefined;
     const worktreePath = await ensureWorktree({ repoPath: cleanRepoPath, branchName: cleanBranch });
+
+    let launchCommand = `"${agent}"`;
+    if (agent === 'ocr') {
+      const baseRef = cleanBaseBranch || 'main';
+      const isSameBranch = cleanBranch === baseRef;
+      launchCommand = isSameBranch
+        ? 'ocr review'
+        : `ocr review --from "${baseRef}" --to HEAD`;
+    }
 
     await openTerminalInAntigravity(
       {
         cleanRepoPath,
         targetDir: worktreePath,
-        cliCommand: `git pull origin "${cleanBranch}" && "${agent}"`,
+        cliCommand: `git pull origin "${cleanBranch}" && ${launchCommand}`,
       },
       dependencies
     );

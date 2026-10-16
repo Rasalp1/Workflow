@@ -446,6 +446,7 @@ export default function Dashboard() {
     repoFullName: string;
     localPath: string;
     branchName?: string;
+    baseBranch?: string;
     agent: AgentType;
     prompt: string;
     cardId?: string;
@@ -602,6 +603,7 @@ export default function Dashboard() {
           repoFullName: prWithGates.pr.repo_full_name,
           localPath: prWithGates.pr.local_path || '',
           branchName: prWithGates.pr.head.ref,
+          baseBranch: prWithGates.pr.base.ref,
           agent: preferredAgent,
           prNumber: prWithGates.pr.number,
         }),

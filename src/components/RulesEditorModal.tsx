@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Plus, Save, SlidersHorizontal, Trash2, Undo2 } from "lucide-react";
-import type { LogicalGateRule } from "@/types";
+import type { AgentType, LogicalGateRule } from "@/types";
 import { GateIcon } from "./ui/GateIcon";
 import { Dialog } from "./ui/Dialog";
 import { Button } from "./ui/Button";
@@ -266,6 +266,29 @@ function RulesForm({
                   <option value="undraft_pr">Mark ready for review</option>
                 </select>
               </div>
+              {(current.actionType || "spawn_agent") === "spawn_agent" && (
+                <div className="field-group">
+                  <label className="field-label" htmlFor="rule-agent">
+                    Assigned agent
+                  </label>
+                  <select
+                    id="rule-agent"
+                    className="ui-input"
+                    value={current.agentOverride || ""}
+                    onChange={(event) =>
+                      update({
+                        agentOverride:
+                          (event.target.value as AgentType) || undefined,
+                      })
+                    }
+                  >
+                    <option value="">Default agent</option>
+                    <option value="ocr">OpenCodeReview (Alibaba OCR)</option>
+                    <option value="codex">Codex (OpenAI)</option>
+                    <option value="claude">Claude Code (Anthropic)</option>
+                  </select>
+                </div>
+              )}
               <div className="field-group">
                 <label className="field-label" htmlFor="rule-color">
                   Action color

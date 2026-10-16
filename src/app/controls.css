@@ -8,6 +8,7 @@
   --warning-soft: #fff5df;
   --agent-codex: #505dc9;
   --agent-claude: #aa502c;
+  --agent-ocr: #059669;
 }
 
 .ui-button,
@@ -536,6 +537,10 @@
   --agent-color: var(--agent-claude);
   --agent-bg: #fff1e9;
 }
+.agent-option[data-agent="ocr"] {
+  --agent-color: var(--agent-ocr);
+  --agent-bg: #ecfdf5;
+}
 .agent-option:hover {
   background: #f7f8fb;
 }
@@ -894,6 +899,14 @@
 .agent-working-banner[data-agent="claude"] :is(h4, p, span) {
   color: #8b492b;
 }
+.agent-working-banner[data-agent="ocr"] {
+  background: #f0fdf4;
+  border-color: #a7f3d0;
+  border-left-color: var(--agent-ocr);
+}
+.agent-working-banner[data-agent="ocr"] :is(h4, p, span) {
+  color: #065f46;
+}
 .agent-working-banner > div {
   min-width: 0;
 }
@@ -1008,6 +1021,10 @@
 .agent-working-banner[data-agent="claude"] {
   --working-color: var(--agent-claude);
   --working-tint: #f9d9c8;
+}
+.agent-working-banner[data-agent="ocr"] {
+  --working-color: var(--agent-ocr);
+  --working-tint: #d1fae5;
 }
 .agent-working-banner > div > div:first-child {
   background: var(--working-color);

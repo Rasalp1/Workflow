@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   try {
     validateOrigin(request);
     const body = await request.json();
-    const { repoFullName, branchName, agent, cardId, prNumber } = body;
+    const { repoFullName, branchName, baseBranch, agent, cardId, prNumber } = body;
 
     if (!branchName) {
       return NextResponse.json({ error: 'Branch name is required' }, { status: 400 });
@@ -39,6 +39,7 @@ export async function POST(request: Request) {
     const result = await spawnWorktreeInAntigravity({
       repoPath: targetPath,
       branchName,
+      baseBranch,
       agent: targetAgent,
     });
 

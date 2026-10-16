@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
-import { AgentType, AppConfig, LogicalGateRule } from '@/types';
+import type { AgentType, AppConfig, LogicalGateRule } from '../types/index.ts';
 
 const DATA_DIR = path.join(process.cwd(), '.workflow-data');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -116,6 +116,27 @@ For each issue:
 - Clear explanation of the problem
 - Suggested solution with code example
 - Rationale for the change`,
+  },
+  {
+    id: 'opencode-review',
+    name: 'OpenCode Review',
+    description: 'Automated deep code review using Alibaba OpenCodeReview (OCR with Luna model).',
+    enabled: true,
+    buttonLabel: 'OpenCode Review',
+    buttonIcon: 'Eye',
+    buttonColor: 'indigo',
+    agentOverride: 'ocr',
+    actionType: 'spawn_agent',
+    conditions: {
+      prOwnedByNonCurrentUser: true,
+      hasNoComments: true,
+    },
+    promptTemplate: `PR #{pr_number}: {pr_title}
+
+### PR Description
+{pr_body}
+
+Review code changes against base branch '{base_branch}'. Verify correctness, edge cases, safety, performance, and adherence to requirements.`,
   },
   {
     id: 'review-with-context',
@@ -278,6 +299,23 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
                   : updated.promptTemplate,
             };
             hasChanges = true;
+          }
+          if (
+            updated.id === 'code-review' &&
+            (updated.agentOverride === 'ocr' ||
+              (typeof updated.promptTemplate === 'string' &&
+                updated.promptTemplate.startsWith('PR #{pr_number}: {pr_title}')))
+          ) {
+            const defaultCodeReview = DEFAULT_RULES.find((dr) => dr.id === 'code-review');
+            if (defaultCodeReview) {
+              const { agentOverride: _discarded, ...rest } = updated;
+              updated = {
+                ...rest,
+                promptTemplate: defaultCodeReview.promptTemplate,
+              };
+              delete updated.agentOverride;
+              hasChanges = true;
+            }
           }
           return updated;
         });

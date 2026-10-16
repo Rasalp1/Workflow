@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'fs';
 import path from 'path';
 import type { AgentType } from '../types/index.ts';
 
-const VALID_AGENT_TYPES: readonly AgentType[] = ['codex', 'claude'];
+const VALID_AGENT_TYPES: readonly AgentType[] = ['codex', 'claude', 'ocr'];
 
 /**
  * Validates that a value is a known agent type before it can reach a shell command.

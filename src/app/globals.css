@@ -1706,6 +1706,11 @@
   background: #ffeadf;
   border-color: #eac6b1;
 }
+.sidebar-agent[data-agent="ocr"] {
+  color: #065f46;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
 .repository-heading {
   border-top: 3px solid #386edb;
   background: #f8fbff;
@@ -2119,6 +2124,11 @@
   border-color: #eac6b1;
   background: #ffeadf;
   color: #994b29;
+}
+.queue-agent[data-agent="ocr"] {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #065f46;
 }
 .queue-link .queue-agent svg {
   color: currentColor;

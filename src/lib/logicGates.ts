@@ -155,6 +155,7 @@ export function formatPromptTemplate(template: string, pr: PullRequest): string 
   return template
     .replace(/{pr_number}/g, String(pr.number))
     .replace(/{pr_title}/g, pr.title)
+    .replace(/{pr_body}/g, pr.body || '')
     .replace(/{repo_name}/g, pr.repo_full_name)
     .replace(/{branch}/g, pr.head.ref)
     .replace(/{base_branch}/g, pr.base.ref)

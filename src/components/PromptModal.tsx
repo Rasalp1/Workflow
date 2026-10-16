@@ -25,6 +25,7 @@ interface PromptModalProps {
     repoFullName: string;
     localPath: string;
     branchName?: string;
+    baseBranch?: string;
     agent: AgentType;
     prompt: string;
     cardId?: string;
@@ -96,6 +97,7 @@ function PromptForm({
           repoFullName: pr.repo_full_name,
           localPath: pr.local_path || "",
           branchName: pr.head.ref,
+          baseBranch: pr.base.ref,
           agent,
           prompt,
           cardId,
@@ -187,7 +189,13 @@ function PromptForm({
                 ? "Mark ready for review"
                 : isComment
                   ? "Post comment"
-                  : `Launch ${agent === "claude" ? "Claude Code" : "Codex"}`}
+                  : `Launch ${
+                      agent === "claude"
+                        ? "Claude Code"
+                        : agent === "ocr"
+                          ? "OpenCodeReview"
+                          : "Codex"
+                    }`}
           </Button>
         </>
       }

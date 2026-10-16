@@ -1,4 +1,4 @@
-import { Check, Cpu, Terminal } from "lucide-react";
+import { Check, Cpu, Eye, Terminal } from "lucide-react";
 import type { AgentType } from "@/types";
 
 export function AgentPicker({
@@ -6,17 +6,23 @@ export function AgentPicker({
   onChange,
   disabled = false,
   label = "Choose an agent",
+  agents,
 }: {
   value: AgentType;
   onChange: (value: AgentType) => void;
   disabled?: boolean;
   label?: string;
+  agents?: readonly AgentType[];
 }) {
+  const availableAgents: readonly AgentType[] =
+    agents ||
+    (value === "ocr" ? (["ocr"] as const) : (["codex", "claude"] as const));
+
   return (
     <fieldset className="field-group" disabled={disabled}>
       <legend className="field-label">{label}</legend>
       <div className="agent-picker">
-        {(["codex", "claude"] as const).map((agent) => (
+        {availableAgents.map((agent) => (
           <label
             className="agent-option"
             data-agent={agent}
@@ -31,11 +37,29 @@ export function AgentPicker({
               onChange={() => onChange(agent)}
             />
             <span className="agent-option-icon">
-              {agent === "codex" ? <Terminal size={20} /> : <Cpu size={20} />}
+              {agent === "codex" ? (
+                <Terminal size={20} />
+              ) : agent === "claude" ? (
+                <Cpu size={20} />
+              ) : (
+                <Eye size={20} />
+              )}
             </span>
             <span>
-              <strong>{agent === "codex" ? "Codex" : "Claude Code"}</strong>
-              <small>{agent === "codex" ? "OpenAI" : "Anthropic"}</small>
+              <strong>
+                {agent === "codex"
+                  ? "Codex"
+                  : agent === "claude"
+                    ? "Claude Code"
+                    : "OpenCodeReview"}
+              </strong>
+              <small>
+                {agent === "codex"
+                  ? "OpenAI"
+                  : agent === "claude"
+                    ? "Anthropic"
+                    : "Alibaba OCR (Luna)"}
+              </small>
             </span>
             {value === agent && (
               <Check size={16} className="agent-option-check" />

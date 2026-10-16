@@ -77,9 +77,9 @@ describe('Logic Gates Evaluator', () => {
   });
 
   it('should correctly replace prompt placeholders', () => {
-    const template = 'PR #{pr_number} by @{author} on branch {branch} in {repo_name}';
+    const template = 'PR #{pr_number} by @{author} on branch {branch} in {repo_name} - {pr_body}';
     const formatted = formatPromptTemplate(template, dummyPR);
-    assert.strictEqual(formatted, 'PR #42 by @alice on branch fix-auth in org/repo');
+    assert.strictEqual(formatted, 'PR #42 by @alice on branch fix-auth in org/repo - Resolves issue with token refresh');
   });
 
   it('should pass review-with-context rule when PR owned by non-user and last comment is by non-user even without prior user comments', () => {
