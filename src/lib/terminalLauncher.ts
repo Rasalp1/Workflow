@@ -206,13 +206,16 @@ end tell
   }
 }
 
-export async function spawnAgentInTerminal({
-  repoPath,
-  branchName,
-  baseBranch,
-  agent,
-  prompt,
-}: SpawnAgentOptions): Promise<{ success: boolean; message: string }> {
+export async function spawnAgentInTerminal(
+  {
+    repoPath,
+    branchName,
+    baseBranch,
+    agent,
+    prompt,
+  }: SpawnAgentOptions,
+  dependencies: TerminalLauncherDependencies = {}
+): Promise<{ success: boolean; message: string }> {
   try {
     validateLocalPath(repoPath);
     const cleanRepoPath = repoPath.replace(/\/$/, '');
@@ -223,6 +226,7 @@ export async function spawnAgentInTerminal({
     }
 
     const cleanBaseBranch = baseBranch ? sanitizeBranchName(baseBranch) : '';
+    const cleanBranch = branchName ? sanitizeBranchName(branchName) : '';
     const promptId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const promptFile = join(tmpdir(), `workflow-prompt-${promptId}.txt`);
     const runnerScript = join(tmpdir(), `workflow-runner-${promptId}.sh`);
@@ -234,10 +238,20 @@ PROMPT_FILE=${JSON.stringify(promptFile)}
 TARGET_DIR=${JSON.stringify(targetDir)}
 AGENT=${JSON.stringify(agent)}
 BASE_BRANCH=${JSON.stringify(cleanBaseBranch)}
+BRANCH=${JSON.stringify(cleanBranch)}
 
 cd "$TARGET_DIR" || exit 1
 PROMPT="$(cat "$PROMPT_FILE")"
 rm -f "$PROMPT_FILE" "$0"
+
+if [ -n "$BRANCH" ]; then
+  echo "📥 Pulling latest changes for $BRANCH..."
+  git pull origin "$BRANCH" || git pull
+else
+  echo "📥 Pulling latest changes..."
+  git pull
+fi
+
 if [ "$AGENT" = "ocr" ]; then
   echo "⚡ Launching OpenCodeReview (Alibaba OCR with gpt-6-luna)..."
   CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
@@ -289,11 +303,14 @@ fi
 
     const cliCommand = `bash "${runnerScript}"`;
 
-    await openTerminalInAntigravity({
-      cleanRepoPath,
-      targetDir,
-      cliCommand,
-    });
+    await openTerminalInAntigravity(
+      {
+        cleanRepoPath,
+        targetDir,
+        cliCommand,
+      },
+      dependencies
+    );
 
     return {
       success: true,

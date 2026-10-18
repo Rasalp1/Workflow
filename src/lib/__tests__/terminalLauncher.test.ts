@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { readFile, unlink } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { openTerminalInAntigravity, spawnWorktreeInAntigravity } from '../terminalLauncher.ts';
+import { openTerminalInAntigravity, spawnWorktreeInAntigravity, spawnAgentInTerminal } from '../terminalLauncher.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -160,6 +160,46 @@ describe('Antigravity integrated terminal launcher', () => {
     });
     assert.equal(result.success, false);
     assert.ok(result.message.includes('does not exist on disk'));
+  });
+
+  it('spawnAgentInTerminal generates runner script that pulls before launching agent CLI', async () => {
+    let runnerScriptPath = '';
+    const runCommand = async (command: string): Promise<unknown> => {
+      if (command.startsWith('osascript ')) {
+        const scriptPath = command.match(/^osascript ["'](.+)["']$/)?.[1];
+        assert.ok(scriptPath);
+        const appleScript = await readFile(scriptPath, 'utf8');
+        const match = appleScript.match(/cmdString to "cd \\"[^"]+\\" && bash \\"([^"]+)\\""/);
+        if (match?.[1]) {
+          runnerScriptPath = match[1];
+        }
+      }
+      return undefined;
+    };
+
+    const result = await spawnAgentInTerminal(
+      {
+        repoPath: process.cwd(),
+        agent: 'codex',
+        prompt: 'Fix the failing test',
+      },
+      { runCommand }
+    );
+
+    assert.equal(result.success, true);
+    assert.ok(runnerScriptPath, 'Should have passed runner script to Antigravity terminal');
+
+    const runnerContent = await readFile(runnerScriptPath, 'utf8');
+    assert.ok(
+      runnerContent.includes('git pull'),
+      'Runner script must execute git pull before launching agent'
+    );
+    // Ensure git pull occurs before agent execution
+    const pullIndex = runnerContent.indexOf('git pull');
+    const agentExecIndex = runnerContent.indexOf('exec "$AGENT" "$PROMPT"');
+    assert.ok(pullIndex !== -1, 'git pull should be present');
+    assert.ok(agentExecIndex !== -1, 'exec agent should be present');
+    assert.ok(pullIndex < agentExecIndex, 'git pull must execute BEFORE agent CLI execution');
   });
 });
 
