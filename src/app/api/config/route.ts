@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { loadConfig, saveConfig } from '@/lib/storage';
-import { validateLocalPath, validateOrigin } from '@/lib/security';
+import { validateAgentType, validateLocalPath, validateOrigin } from '@/lib/security';
 import { clearGitHubCache } from '@/lib/github';
 
 export async function GET() {
@@ -30,26 +30,40 @@ export async function POST(request: Request) {
     }
 
     const requestedRepoPaths = (newConfig as { repoPaths?: unknown }).repoPaths;
+    const validatedRepoPaths: Record<string, string> = {};
     if (requestedRepoPaths !== undefined) {
       if (!requestedRepoPaths || typeof requestedRepoPaths !== 'object' || Array.isArray(requestedRepoPaths)) {
         return NextResponse.json({ error: 'repoPaths must be an object.' }, { status: 400 });
       }
       for (const [repo, localPath] of Object.entries(requestedRepoPaths)) {
+        // Silently omit any legacy env-style keys if passed
+        if (repo.startsWith('REPO_PATH_')) continue;
+
         if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
           return NextResponse.json({ error: `Invalid repository name "${repo}".` }, { status: 400 });
         }
-        if (localPath === '') continue;
+        if (localPath === '') {
+          validatedRepoPaths[repo] = '';
+          continue;
+        }
         if (typeof localPath !== 'string') {
           return NextResponse.json({ error: `Path for "${repo}" must be a string.` }, { status: 400 });
         }
         validateLocalPath(localPath);
+        validatedRepoPaths[repo] = localPath;
       }
     }
+
+    if (newConfig.defaultAgent !== undefined) {
+      validateAgentType(newConfig.defaultAgent);
+    }
+
     const currentConfig = await loadConfig();
 
     const merged = {
       ...currentConfig,
       ...newConfig,
+      ...(requestedRepoPaths !== undefined ? { repoPaths: validatedRepoPaths } : {}),
       // Keep existing token if masked or empty in input
       githubToken:
         newConfig.githubToken && !newConfig.githubToken.includes('...')

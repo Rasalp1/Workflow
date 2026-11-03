@@ -56,7 +56,8 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({
                   pr,
                   currentUser || null,
                 );
-                const status = pr.has_merge_conflicts
+                const isConflict = Boolean(pr.has_merge_conflicts || pr.mergeable_state === "dirty");
+                const status = isConflict
                   ? "Conflicts"
                   : pr.checks_status === "success"
                     ? "Checks passed"
@@ -66,7 +67,7 @@ export const PRSidebar: React.FC<PRSidebarProps> = ({
                         ? "Checks pending"
                         : "No checks";
                 const statusClass =
-                  pr.has_merge_conflicts || pr.checks_status === "failure"
+                  isConflict || pr.checks_status === "failure"
                     ? "rose"
                     : pr.checks_status === "success"
                       ? "green"

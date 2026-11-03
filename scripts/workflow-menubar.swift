@@ -657,7 +657,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !isFetching else { return }
         isFetching = true
         
-        guard let url = URL(string: "http://localhost:\(port)/api/prs") else {
+        let endpoint = force ? "http://localhost:\(port)/api/prs?force=true" : "http://localhost:\(port)/api/prs"
+        guard let url = URL(string: endpoint) else {
             isFetching = false
             return
         }

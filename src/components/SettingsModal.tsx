@@ -48,7 +48,17 @@ function SettingsForm({
   const [repositories, setRepositories] = useState(
     config.monitoredRepos.join(", "),
   );
-  const [repoPaths, setRepoPaths] = useState(config.repoPaths);
+  const [repoPaths, setRepoPaths] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    if (config.repoPaths && typeof config.repoPaths === "object") {
+      for (const [key, value] of Object.entries(config.repoPaths)) {
+        if (/^[\w.-]+\/[\w.-]+$/.test(key) && typeof value === "string") {
+          initial[key] = value;
+        }
+      }
+    }
+    return initial;
+  });
   const [defaultAgent, setDefaultAgent] = useState<AgentType>(
     config.defaultAgent || "codex",
   );
@@ -81,10 +91,18 @@ function SettingsForm({
     }
     setIsSaving(true);
     try {
+      const cleanedRepoPaths: Record<string, string> = {};
+      for (const repo of repos) {
+        const val = repoPaths[repo];
+        if (typeof val === "string") {
+          cleanedRepoPaths[repo] = val.trim();
+        }
+      }
+
       await onSaveConfig({
         ...(githubToken.trim() ? { githubToken: githubToken.trim() } : {}),
         monitoredRepos: repos,
-        repoPaths,
+        repoPaths: cleanedRepoPaths,
         defaultAgent,
         directAgentSpawn,
       });
@@ -219,6 +237,7 @@ function SettingsForm({
           onChange={setDefaultAgent}
           disabled={isSaving}
           label="Default agent"
+          agents={["codex", "claude"]}
         />
         <label className="launch-setting" data-enabled={directAgentSpawn}>
           <span>

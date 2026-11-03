@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { DEFAULT_RULES, loadRules } from '../storage.ts';
+import { DEFAULT_RULES, loadConfig, loadRules, saveConfig } from '../storage.ts';
 
 describe('Rules and Storage Configuration', () => {
   it('DEFAULT_RULES includes standard code-review without agentOverride', () => {
@@ -50,5 +50,66 @@ describe('Rules and Storage Configuration', () => {
 
     assert.ok(ocrReview, 'opencode-review must exist in loaded rules');
     assert.strictEqual(ocrReview.agentOverride, 'ocr');
+  });
+
+  it('DEFAULT_RULES and loadRules have updated buttonLabel and promptTemplate for rebase-non-user-pr', async () => {
+    const defaultRule = DEFAULT_RULES.find((r) => r.id === 'rebase-non-user-pr');
+    assert.ok(defaultRule, 'rebase-non-user-pr rule must exist in DEFAULT_RULES');
+    assert.strictEqual(
+      defaultRule.buttonLabel,
+      'Ask author to solve merge conflicts against target branch'
+    );
+    assert.strictEqual(
+      defaultRule.promptTemplate,
+      '@{author} Please solve merge conflicts against target branch.'
+    );
+
+    const rules = await loadRules();
+    const loadedRule = rules.find((r) => r.id === 'rebase-non-user-pr');
+    assert.ok(loadedRule, 'rebase-non-user-pr rule must exist in loaded rules');
+    assert.strictEqual(
+      loadedRule.buttonLabel,
+      'Ask author to solve merge conflicts against target branch'
+    );
+    assert.strictEqual(
+      loadedRule.promptTemplate,
+      '@{author} Please solve merge conflicts against target branch.'
+    );
+  });
+
+  it('loadConfig cleans legacy REPO_PATH_ keys and maps environment variables to repo names', async () => {
+    const config = await loadConfig();
+    assert.ok(config, 'Config must load');
+    for (const key of Object.keys(config.repoPaths)) {
+      assert.ok(
+        !key.startsWith('REPO_PATH_'),
+        `repoPaths key "${key}" must not start with REPO_PATH_`
+      );
+      assert.match(
+        key,
+        /^[\w.-]+\/[\w.-]+$/,
+        `repoPaths key "${key}" must be an owner/repo format`
+      );
+    }
+  });
+
+  it('saveConfig preserves defaultAgent and cleans invalid repository keys from repoPaths', async () => {
+    const original = await loadConfig();
+    try {
+      await saveConfig({
+        ...original,
+        defaultAgent: 'claude',
+        repoPaths: {
+          ...original.repoPaths,
+          'REPO_PATH_DIRTY_KEY': '/some/dirty/path',
+        },
+      });
+
+      const updated = await loadConfig();
+      assert.strictEqual(updated.defaultAgent, 'claude');
+      assert.strictEqual(updated.repoPaths['REPO_PATH_DIRTY_KEY'], undefined);
+    } finally {
+      await saveConfig(original);
+    }
   });
 });

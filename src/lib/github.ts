@@ -66,7 +66,7 @@ export function releaseSlot(): void {
 
 // In-memory short TTL cache for full repo PR responses to coalesce rapid/concurrent polls
 const repoPrsCache = new Map<string, { prs: PullRequest[]; timestamp: number }>();
-const REPO_CACHE_TTL_MS = 25000; // 25 seconds
+const REPO_CACHE_TTL_MS = 4000; // 4 seconds (coalesces rapid concurrent polls while keeping updates near-instant)
 
 // In-memory cache for detailed PR objects keyed by `${repoFullName}#${prNumber}@${updated_at}`
 const prDetailsCache = new Map<string, PullRequest>();
@@ -163,7 +163,8 @@ export function handleRateLimitHeaders(
   return { isRateLimit: true, resetAt, isSecondary };
 }
 
-async function fetchGitHubAPI(endpoint: string, token?: string, noCache = true, retryCount = 0): Promise<any> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchGitHubAPI<T = any>(endpoint: string, token?: string, noCache = true, retryCount = 0): Promise<T> {
   const rateLimit = getRateLimitStatus();
   if (rateLimit.isRateLimited && rateLimit.resetAt) {
     throw new GitHubRateLimitError(
@@ -262,6 +263,136 @@ async function fetchAllGitHubPages(endpoint: string, token?: string): Promise<Re
   return allData;
 }
 
+export interface PRMergeStatus {
+  hasMergeConflicts: boolean;
+  mergeableState?: string;
+  mergeable?: boolean | null;
+}
+
+/**
+ * Fetches the live mergeable and mergeStateStatus for all open PRs in a repository via GitHub GraphQL API.
+ * This triggers GitHub's background calculation and provides 1-request bulk conflict detection.
+ */
+export async function fetchRepoPRsMergeStatus(
+  owner: string,
+  repo: string,
+  token?: string
+): Promise<Map<number, PRMergeStatus>> {
+  const result = new Map<number, PRMergeStatus>();
+  const authToken = token || process.env.GITHUB_TOKEN;
+  if (!authToken) return result;
+
+  const rateLimit = getRateLimitStatus();
+  if (rateLimit.isRateLimited && rateLimit.resetAt) {
+    return result;
+  }
+
+  const query = `
+    query GetOpenPRsMergeStatus($owner: String!, $name: String!) {
+      repository(owner: $owner, name: $name) {
+        pullRequests(states: [OPEN], first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
+          nodes {
+            number
+            mergeable
+            mergeStateStatus
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    await acquireSlot();
+    let res: Response;
+    try {
+      res = await fetch('https://api.github.com/graphql', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'Workflow-App',
+        },
+        body: JSON.stringify({ query, variables: { owner, name: repo } }),
+      });
+    } finally {
+      releaseSlot();
+    }
+
+    if (!res.ok) {
+      return result;
+    }
+
+    const data = await res.json();
+    const nodes = (data.data?.repository?.pullRequests?.nodes || []) as Array<{
+      number: number;
+      mergeable?: string | null;
+      mergeStateStatus?: string | null;
+    }>;
+
+    const unknownNumbers: number[] = [];
+    for (const node of nodes) {
+      const num = node.number;
+      const mergeable = node.mergeable;
+      const status = node.mergeStateStatus;
+
+      if (mergeable === 'UNKNOWN' || status === 'UNKNOWN' || !mergeable) {
+        unknownNumbers.push(num);
+      } else {
+        const isConflict = mergeable === 'CONFLICTING' || status === 'DIRTY';
+        result.set(num, {
+          hasMergeConflicts: isConflict,
+          mergeable: mergeable === 'MERGEABLE' ? true : mergeable === 'CONFLICTING' ? false : null,
+          mergeableState: status ? status.toLowerCase() : undefined,
+        });
+      }
+    }
+
+    // If some PRs are UNKNOWN, GitHub's background calculation was just triggered.
+    // Wait 1.2s and retry once to retrieve calculated conflict status.
+    if (unknownNumbers.length > 0) {
+      await new Promise((r) => setTimeout(r, 1200));
+      await acquireSlot();
+      try {
+        res = await fetch('https://api.github.com/graphql', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'Workflow-App',
+          },
+          body: JSON.stringify({ query, variables: { owner, name: repo } }),
+        });
+      } finally {
+        releaseSlot();
+      }
+
+      if (res.ok) {
+        const retryData = await res.json();
+        const retryNodes = (retryData.data?.repository?.pullRequests?.nodes || []) as Array<{
+          number: number;
+          mergeable?: string | null;
+          mergeStateStatus?: string | null;
+        }>;
+        for (const node of retryNodes) {
+          const num = node.number;
+          const mergeable = node.mergeable;
+          const status = node.mergeStateStatus;
+          const isConflict = mergeable === 'CONFLICTING' || status === 'DIRTY';
+          result.set(num, {
+            hasMergeConflicts: isConflict,
+            mergeable: mergeable === 'MERGEABLE' ? true : mergeable === 'CONFLICTING' ? false : null,
+            mergeableState: status ? status.toLowerCase() : undefined,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('fetchRepoPRsMergeStatus error:', err);
+  }
+
+  return result;
+}
+
 export async function getRepoPullRequests(
   repoFullName: string,
   token?: string,
@@ -282,8 +413,11 @@ export async function getRepoPullRequests(
   }
 
   const fetchPromise = (async () => {
-    // Fetch open pull requests (1 single call)
-    const prsData = await fetchGitHubAPI(`/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc`, token, true);
+    // Fetch open pull requests (REST) and live PR merge status (GraphQL) in parallel
+    const [prsData, liveMergeStatusMap] = await Promise.all([
+      fetchGitHubAPI(`/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc`, token, true),
+      fetchRepoPRsMergeStatus(owner, repo, token),
+    ]);
 
     // Filter out PRs created by github-actions[bot]
     const validPrsData = (prsData || []).filter(
@@ -304,10 +438,21 @@ export async function getRepoPullRequests(
       const prNumber = rawPr.number as number;
       const updatedAt = (rawPr.updated_at as string) || '';
       const cacheKey = `${repoFullName}#${prNumber}@${updatedAt}`;
+      const liveStatus = liveMergeStatusMap.get(prNumber);
 
       // If PR sub-resources are already cached for this exact updatedAt, reuse them!
+      // But ALWAYS update live merge status because base branch (main) changes introduce conflicts without touching updatedAt!
       if (!forceRefresh && prDetailsCache.has(cacheKey)) {
-        return prDetailsCache.get(cacheKey)!;
+        const cached = prDetailsCache.get(cacheKey)!;
+        if (liveStatus && liveStatus.mergeableState !== 'unknown') {
+          cached.has_merge_conflicts = liveStatus.hasMergeConflicts;
+          if (liveStatus.mergeableState) {
+            cached.mergeable_state = liveStatus.mergeableState;
+          }
+        }
+        if (cached.mergeable_state !== 'unknown' && cached.has_merge_conflicts !== undefined) {
+          return cached;
+        }
       }
 
       const head = rawPr.head as { ref: string; sha: string };
@@ -341,6 +486,20 @@ export async function getRepoPullRequests(
           return [];
         }),
       ]);
+
+      // If liveStatus was unknown or unavailable, and REST API returned null/unknown mergeable, retry once after short delay
+      let prDetails = singlePrDetails;
+      if (
+        (!liveStatus || liveStatus.mergeableState === 'unknown') &&
+        prDetails &&
+        (prDetails.mergeable === null || prDetails.mergeable_state === 'unknown')
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        const retryDetails = await fetchGitHubAPI(`/repos/${owner}/${repo}/pulls/${prNumber}`, token, true).catch(() => null);
+        if (retryDetails && (retryDetails.mergeable !== null || retryDetails.mergeable_state !== 'unknown')) {
+          prDetails = retryDetails;
+        }
+      }
 
       const formattedCommits: PRCommit[] = (prCommits || []).map((c: Record<string, unknown>) => {
         const commitObj = (c.commit as Record<string, unknown>) || {};
@@ -431,9 +590,16 @@ export async function getRepoPullRequests(
         else if (combinedStatus.state === 'pending') checksStatus = 'pending';
       }
 
+      // Check live merge status (from GraphQL) or REST PR details
       const hasMergeConflicts =
-        singlePrDetails?.mergeable === false ||
-        singlePrDetails?.mergeable_state === 'dirty';
+        liveStatus !== undefined && liveStatus.mergeableState !== 'unknown'
+          ? liveStatus.hasMergeConflicts
+          : prDetails?.mergeable === false || prDetails?.mergeable_state === 'dirty';
+
+      const mergeableState =
+        (liveStatus?.mergeableState && liveStatus.mergeableState !== 'unknown')
+          ? liveStatus.mergeableState
+          : prDetails?.mergeable_state;
 
       const prObj: PullRequest = {
         id: rawPr.id as number,
@@ -467,16 +633,19 @@ export async function getRepoPullRequests(
         last_comment: lastComment,
         checks_status: checksStatus,
         has_merge_conflicts: hasMergeConflicts,
-        mergeable_state: singlePrDetails?.mergeable_state,
+        mergeable_state: mergeableState,
       };
 
-      prDetailsCache.set(cacheKey, prObj);
+      if (mergeableState !== 'unknown' || (liveStatus && liveStatus.mergeableState !== 'unknown')) {
+        prDetailsCache.set(cacheKey, prObj);
+      }
       return prObj;
     });
 
     repoPrsCache.set(repoFullName, { prs: pullRequests, timestamp: Date.now() });
     return pullRequests;
   })();
+
 
   inFlightRepoFetches.set(repoFullName, fetchPromise);
   try {
@@ -801,6 +970,7 @@ export async function postPRComment(
   }
 
   const data = await res.json();
+  repoPrsCache.delete(repoFullName);
   return { success: true, commentUrl: data.html_url };
 }
 
@@ -862,6 +1032,7 @@ export async function mergePullRequest(
   }
 
   const data = await res.json();
+  repoPrsCache.delete(repoFullName);
   return {
     success: true,
     message: data.message || `PR #${prNumber} successfully merged`,
@@ -980,6 +1151,7 @@ export async function undraftPullRequest(
     throw new Error(`GitHub reported PR #${prNumber} is still in draft state after mutation.`);
   }
 
+  repoPrsCache.delete(repoFullName);
   return {
     success: true,
     message: `PR #${prNumber} successfully converted to open ready-for-review PR`,

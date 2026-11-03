@@ -187,10 +187,10 @@ Review code changes against base branch '{base_branch}'. Verify correctness, edg
   },
   {
     id: 'rebase-non-user-pr',
-    name: 'Request Author Rebase Comment',
+    name: 'Request Author Solve Merge Conflicts Comment',
     description: 'PR owned by non-user that has merge conflicts.',
     enabled: true,
-    buttonLabel: 'Ask author to rebase',
+    buttonLabel: 'Ask author to solve merge conflicts against target branch',
     buttonIcon: 'GitBranch',
     buttonColor: 'amber',
     actionType: 'post_comment',
@@ -198,7 +198,7 @@ Review code changes against base branch '{base_branch}'. Verify correctness, edg
       prOwnedByNonCurrentUser: true,
       hasMergeConflicts: true,
     },
-    promptTemplate: `@pr_author Please rebase this pull request onto main to resolve merge conflicts.`,
+    promptTemplate: `@{author} Please solve merge conflicts against target branch.`,
   },
 ];
 
@@ -228,11 +228,12 @@ export async function loadConfig(): Promise<AppConfig> {
     .filter(Boolean);
 
   const envPaths: Record<string, string> = {};
-  Object.keys(process.env).forEach((key) => {
-    if (key.startsWith('REPO_PATH_')) {
-      envPaths[key] = process.env[key] || '';
+  for (const repo of envRepos) {
+    const envKey = `REPO_PATH_${repo.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}`;
+    if (process.env[envKey]) {
+      envPaths[repo] = process.env[envKey] || '';
     }
-  });
+  }
 
   const defaultConfig: AppConfig = {
     githubToken: process.env.GITHUB_TOKEN || '',
@@ -246,10 +247,33 @@ export async function loadConfig(): Promise<AppConfig> {
     try {
       const fileContent = await fs.readFile(CONFIG_FILE, 'utf-8');
       const data = JSON.parse(fileContent);
+
+      const cleanedStoredPaths: Record<string, string> = {};
+      if (data.repoPaths && typeof data.repoPaths === 'object') {
+        const candidateRepos = [
+          ...envRepos,
+          ...(Array.isArray(data.monitoredRepos) ? data.monitoredRepos : []),
+        ];
+        for (const [key, value] of Object.entries(data.repoPaths)) {
+          if (typeof value === 'string') {
+            if (/^[\w.-]+\/[\w.-]+$/.test(key)) {
+              cleanedStoredPaths[key] = value;
+            } else if (key.startsWith('REPO_PATH_')) {
+              const matchedRepo = candidateRepos.find(
+                (r) => `REPO_PATH_${r.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase()}` === key
+              );
+              if (matchedRepo && !cleanedStoredPaths[matchedRepo]) {
+                cleanedStoredPaths[matchedRepo] = value;
+              }
+            }
+          }
+        }
+      }
+
       return {
         ...defaultConfig,
         ...data,
-        repoPaths: { ...defaultConfig.repoPaths, ...(data.repoPaths || {}) },
+        repoPaths: { ...defaultConfig.repoPaths, ...cleanedStoredPaths },
       };
     } catch (e) {
       console.error('Failed to parse config file:', e);
@@ -260,7 +284,19 @@ export async function loadConfig(): Promise<AppConfig> {
 }
 
 export async function saveConfig(config: AppConfig): Promise<void> {
-  await atomicWriteJson(CONFIG_FILE, config);
+  const cleanedRepoPaths: Record<string, string> = {};
+  if (config.repoPaths && typeof config.repoPaths === 'object') {
+    for (const [key, value] of Object.entries(config.repoPaths)) {
+      if (/^[\w.-]+\/[\w.-]+$/.test(key) && typeof value === 'string') {
+        cleanedRepoPaths[key] = value;
+      }
+    }
+  }
+  const cleanedConfig = {
+    ...config,
+    repoPaths: cleanedRepoPaths,
+  };
+  await atomicWriteJson(CONFIG_FILE, cleanedConfig);
 }
 
 export async function loadRules(): Promise<LogicalGateRule[]> {
@@ -283,9 +319,36 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
             delete restConditions.hasCommentsByCurrentUser;
             updated = { ...updated, conditions: { notReviewedByOthers: true, ...restConditions } };
           }
-          if (updated.id === 'rebase-non-user-pr' && updated.buttonLabel === 'Rebase') {
-            updated = { ...updated, buttonLabel: 'Ask author to rebase' };
-            hasChanges = true;
+          if (updated.id === 'rebase-non-user-pr') {
+            const defaultNonUserConflictRule = DEFAULT_RULES.find((dr) => dr.id === 'rebase-non-user-pr');
+            if (updated.buttonLabel === 'Rebase' || updated.buttonLabel === 'Ask author to rebase') {
+              updated = {
+                ...updated,
+                buttonLabel: defaultNonUserConflictRule?.buttonLabel || 'Ask author to solve merge conflicts against target branch',
+              };
+              hasChanges = true;
+            }
+            if (
+              updated.name === 'Request Author Rebase Comment' &&
+              defaultNonUserConflictRule?.name
+            ) {
+              updated = {
+                ...updated,
+                name: defaultNonUserConflictRule.name,
+              };
+              hasChanges = true;
+            }
+            if (
+              typeof updated.promptTemplate === 'string' &&
+              (updated.promptTemplate.includes('Please rebase this pull request onto main') ||
+                updated.promptTemplate.includes('Please rebase'))
+            ) {
+              updated = {
+                ...updated,
+                promptTemplate: defaultNonUserConflictRule?.promptTemplate || '@{author} Please solve merge conflicts against target branch.',
+              };
+              hasChanges = true;
+            }
           }
           if (updated.id === 'rebase-user-pr' && (updated.buttonLabel === 'Rebase' || updated.name === 'Rebase User PR Branch')) {
             const defaultConflictRule = DEFAULT_RULES.find((dr) => dr.id === 'rebase-user-pr');
@@ -308,12 +371,12 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
           ) {
             const defaultCodeReview = DEFAULT_RULES.find((dr) => dr.id === 'code-review');
             if (defaultCodeReview) {
-              const { agentOverride: _discarded, ...rest } = updated;
+              const rest = { ...updated };
+              delete rest.agentOverride;
               updated = {
                 ...rest,
                 promptTemplate: defaultCodeReview.promptTemplate,
               };
-              delete updated.agentOverride;
               hasChanges = true;
             }
           }

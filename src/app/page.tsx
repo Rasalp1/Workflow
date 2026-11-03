@@ -109,11 +109,12 @@ export default function Dashboard() {
   };
 
   // Fetch PRs and Gates
-  const fetchPRs = React.useCallback(async () => {
+  const fetchPRs = React.useCallback(async (force = false) => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/prs?t=${Date.now()}`, { cache: 'no-store' });
+      const forceParam = force ? '&force=true' : '';
+      const res = await fetch(`/api/prs?t=${Date.now()}${forceParam}`, { cache: 'no-store' });
       const data = await res.json();
 
       if (data.error) {
@@ -178,7 +179,7 @@ export default function Dashboard() {
     const init = async () => {
       await fetchConfigAndRules();
       if (isMounted) {
-        await fetchPRs();
+        await fetchPRs(true);
       }
     };
     init();
@@ -425,7 +426,7 @@ export default function Dashboard() {
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || 'Could not save rules.');
     setRules(updatedRules);
-    fetchPRs();
+    fetchPRs(true);
   };
 
   const handleSaveConfig = async (updatedConfig: Partial<AppConfig>) => {
@@ -437,7 +438,7 @@ export default function Dashboard() {
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || 'Could not save settings.');
     fetchConfigAndRules();
-    fetchPRs();
+    fetchPRs(true);
   };
 
   const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -501,7 +502,7 @@ export default function Dashboard() {
             throw new Error(data.error || 'Failed to mark PR as ready for review');
           }
           setActionBanner({ type: 'success', message: `PR #${prWithGates.pr.number} marked as ready for review!` });
-          fetchPRs();
+          fetchPRs(true);
           setTimeout(() => setActionBanner(null), 5000);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : 'Action failed';
@@ -524,6 +525,7 @@ export default function Dashboard() {
             throw new Error(data.error || 'Failed to post comment');
           }
           setActionBanner({ type: 'success', message: `Comment posted on GitHub PR #${prWithGates.pr.number}!` });
+          fetchPRs(true);
           setTimeout(() => setActionBanner(null), 5000);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : 'Action failed';
@@ -576,7 +578,7 @@ export default function Dashboard() {
       });
       setTimeout(() => setActionBanner(null), 5000);
       setHistoryRefreshKey((key) => key + 1);
-      fetchPRs();
+      fetchPRs(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to merge PR';
       setActionBanner({ type: 'error', message: msg });
@@ -683,7 +685,7 @@ export default function Dashboard() {
       title: pr.title,
       branchName: pr.head.ref,
       cardId: `pr-card-${pr.repo_full_name}-${pr.number}`,
-      hasMergeConflicts: Boolean(pr.has_merge_conflicts),
+      hasMergeConflicts: Boolean(pr.has_merge_conflicts || pr.mergeable_state === 'dirty'),
     });
   });
   const awaitingCommentItems = Object.entries(awaitingReposMap).map(([repoName, prs]) => ({ repoName, prs }));
@@ -697,7 +699,7 @@ export default function Dashboard() {
       title: pr.title,
       branchName: pr.head.ref,
       cardId: `pr-card-${pr.repo_full_name}-${pr.number}`,
-      hasMergeConflicts: Boolean(pr.has_merge_conflicts),
+      hasMergeConflicts: Boolean(pr.has_merge_conflicts || pr.mergeable_state === 'dirty'),
     });
   });
   const theirsToHandleItems = Object.entries(theirsReposMap).map(([repoName, prs]) => ({ repoName, prs }));
@@ -707,225 +709,225 @@ export default function Dashboard() {
       <a className="skip-link" href="#main-content">Skip to pull requests</a>
       <div className="workspace-rail">
         <WorkspaceBrand />
-            {/* PR Sidebar navigation */}
-            <PRSidebar
-              currentUser={currentUser}
-              prsWithGates={sortedPRs}
-              activeCol1PRId={effectiveActiveCol1PRId}
-              activeCol2PRId={effectiveActiveCol2PRId}
-              activeAgentPRs={activeAgentPRs}
-              onSelectPR={handleSelectPR}
-            />
+        {/* PR Sidebar navigation */}
+        <PRSidebar
+          currentUser={currentUser}
+          prsWithGates={sortedPRs}
+          activeCol1PRId={effectiveActiveCol1PRId}
+          activeCol2PRId={effectiveActiveCol2PRId}
+          activeAgentPRs={activeAgentPRs}
+          onSelectPR={handleSelectPR}
+        />
 
       </div>
       <div className="workspace-content">
-      {/* Header Bar */}
-      <Header
-        onRefresh={fetchPRs}
-        isLoading={isLoading}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
-        onOpenRules={() => setIsRulesModalOpen(true)}
-        onOpenCloseWorktreesModal={() => setIsCloseWorktreesModalOpen(true)}
-        currentUser={currentUser}
-        directAgentSpawn={config?.directAgentSpawn}
-        prCount={searchFilteredPRs.length}
-        awaitingCommentCount={prsAwaitingOurComment.length}
-        theirsToHandleCount={searchFilteredPRs.length - prsAwaitingOurComment.length}
-        awaitingCommentItems={awaitingCommentItems}
-        theirsToHandleItems={theirsToHandleItems}
-        activeAgentPRs={activeAgentPRs}
-        onClearActiveAgent={handleClearActiveAgent}
-        onClearAllActiveAgents={handleClearAllActiveAgents}
-        onSelectPR={handleSelectPR}
-        col1Repo={col1Repo}
-        col2Repo={col2Repo}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        activeCol1PRId={effectiveActiveCol1PRId}
-        activeCol2PRId={effectiveActiveCol2PRId}
-      />
+        {/* Header Bar */}
+        <Header
+          onRefresh={() => fetchPRs(true)}
+          isLoading={isLoading}
+          onOpenSettings={() => setIsSettingsModalOpen(true)}
+          onOpenRules={() => setIsRulesModalOpen(true)}
+          onOpenCloseWorktreesModal={() => setIsCloseWorktreesModalOpen(true)}
+          currentUser={currentUser}
+          directAgentSpawn={config?.directAgentSpawn}
+          prCount={searchFilteredPRs.length}
+          awaitingCommentCount={prsAwaitingOurComment.length}
+          theirsToHandleCount={searchFilteredPRs.length - prsAwaitingOurComment.length}
+          awaitingCommentItems={awaitingCommentItems}
+          theirsToHandleItems={theirsToHandleItems}
+          activeAgentPRs={activeAgentPRs}
+          onClearActiveAgent={handleClearActiveAgent}
+          onClearAllActiveAgents={handleClearAllActiveAgents}
+          onSelectPR={handleSelectPR}
+          col1Repo={col1Repo}
+          col2Repo={col2Repo}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          activeCol1PRId={effectiveActiveCol1PRId}
+          activeCol2PRId={effectiveActiveCol2PRId}
+        />
 
-      {/* Main Container - Fills Remaining Screen Height */}
-      <main className="workspace-main" id="main-content">
+        {/* Main Container - Fills Remaining Screen Height */}
+        <main className="workspace-main" id="main-content">
 
-        {actionBanner && (
-          <div className="workspace-feedback">
-            <Notice tone={actionBanner.type === 'error' ? 'danger' : actionBanner.type}>
-              <div className="feedback-content"><span>{actionBanner.message}</span><Button variant="quiet" size="small" onClick={() => setActionBanner(null)}>Dismiss</Button></div>
-            </Notice>
-          </div>
-        )}
-        {error && (
-          <div className="workspace-feedback">
-            <Notice tone="danger" title="GitHub connection needs attention">
-              <p>{error}</p>
-              <div className="feedback-actions"><Button onClick={() => setIsSettingsModalOpen(true)}><Key size={15} />Open connection settings</Button><Button variant="primary" busy={isLoading} onClick={fetchPRs}>Try again</Button></div>
-            </Notice>
-          </div>
-        )}
+          {actionBanner && (
+            <div className="workspace-feedback">
+              <Notice tone={actionBanner.type === 'error' ? 'danger' : actionBanner.type}>
+                <div className="feedback-content"><span>{actionBanner.message}</span><Button variant="quiet" size="small" onClick={() => setActionBanner(null)}>Dismiss</Button></div>
+              </Notice>
+            </div>
+          )}
+          {error && (
+            <div className="workspace-feedback">
+              <Notice tone="danger" title="GitHub connection needs attention">
+                <p>{error}</p>
+                <div className="feedback-actions"><Button onClick={() => setIsSettingsModalOpen(true)}><Key size={15} />Open connection settings</Button><Button variant="primary" busy={isLoading} onClick={() => fetchPRs(true)}>Try again</Button></div>
+              </Notice>
+            </div>
+          )}
 
-        {/* Loading Spinner State */}
-        {isLoading && prsWithGates.length === 0 ? (
-          <div className="workspace-loading" role="status" aria-live="polite">
-            <RefreshCw className="w-7 h-7 text-blue-500 animate-spin mx-auto" />
-            <p>
-              Loading pull requests and discussions…
-            </p>
-          </div>
-        ) : searchFilteredPRs.length === 0 ? (
-          /* Empty State */
-          <div className="workspace-empty space-y-3">
-            <GitPullRequest className="empty-icon" />
-            <h3 className="text-base font-semibold text-gray-700">
-              {error ? 'Unable to load pull requests' : searchQuery ? 'No matching pull requests' : 'Your review queue is clear'}
-            </h3>
-            <p className="text-sm text-gray-500 max-w-md mx-auto">
-              {error
-                ? 'Check your GitHub connection above, then refresh to try again.'
-                : searchQuery
-                ? `No PRs matching "${searchQuery}" across monitored repositories.`
-                : 'There are currently no open PRs matching your filter across monitored repositories.'}
-            </p>
-            {searchQuery ? (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="ui-button ui-button--primary"
-              >
-                Clear Search
-              </button>
-            ) : (
-              <button
-                onClick={fetchPRs}
-                className="ui-button ui-button--secondary"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
-              </button>
-            )}
-          </div>
-        ) : (
-          /* Sidebar + 2-Column Independent Scrolling Layout */
-          <div className="review-layout">
-            {/* Two Independent Scrolling Columns */}
-            <div className="review-columns">
-              {/* COLUMN 1 */}
-              <div className="repository-panel" data-column="primary">
-                {/* Column 1 Repository Selector Header */}
-                <div className="repository-heading">
-                  <div className="flex items-center gap-2">
-                    <GitPullRequest className="w-3.5 h-3.5 text-blue-500" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                      Primary
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Repo:</span>
-                    <select
-                      aria-label="Primary repository"
-                      value={col1Repo}
-                      onChange={(e) => handleCol1RepoChange(e.target.value)}
-                      className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-blue-700 focus:outline-none focus:border-blue-400 cursor-pointer"
-                    >
-                      {monitoredRepos.map((repo) => (
-                        <option key={repo} value={repo} disabled={monitoredRepos.length > 1 && repo === col2Repo}>
-                          {repo} {repo === col2Repo ? '(Selected in Col 2)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Column 1 Scrollable Content */}
-                <div ref={col1ScrollRef} className="repository-scroll">
-                  {col1PRs.length === 0 ? (
-                    <div className="p-8 text-center rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-400 italic">
-                      No open PRs found for <strong className="text-gray-600">{col1Repo}</strong>.
+          {/* Loading Spinner State */}
+          {isLoading && prsWithGates.length === 0 ? (
+            <div className="workspace-loading" role="status" aria-live="polite">
+              <RefreshCw className="w-7 h-7 text-blue-500 animate-spin mx-auto" />
+              <p>
+                Loading pull requests and discussions…
+              </p>
+            </div>
+          ) : searchFilteredPRs.length === 0 ? (
+            /* Empty State */
+            <div className="workspace-empty space-y-3">
+              <GitPullRequest className="empty-icon" />
+              <h3 className="text-base font-semibold text-gray-700">
+                {error ? 'Unable to load pull requests' : searchQuery ? 'No matching pull requests' : 'Your review queue is clear'}
+              </h3>
+              <p className="text-sm text-gray-500 max-w-md mx-auto">
+                {error
+                  ? 'Check your GitHub connection above, then refresh to try again.'
+                  : searchQuery
+                    ? `No PRs matching "${searchQuery}" across monitored repositories.`
+                    : 'There are currently no open PRs matching your filter across monitored repositories.'}
+              </p>
+              {searchQuery ? (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="ui-button ui-button--primary"
+                >
+                  Clear Search
+                </button>
+              ) : (
+                <button
+                  onClick={() => fetchPRs(true)}
+                  className="ui-button ui-button--secondary"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Refresh
+                </button>
+              )}
+            </div>
+          ) : (
+            /* Sidebar + 2-Column Independent Scrolling Layout */
+            <div className="review-layout">
+              {/* Two Independent Scrolling Columns */}
+              <div className="review-columns">
+                {/* COLUMN 1 */}
+                <div className="repository-panel" data-column="primary">
+                  {/* Column 1 Repository Selector Header */}
+                  <div className="repository-heading">
+                    <div className="flex items-center gap-2">
+                      <GitPullRequest className="w-3.5 h-3.5 text-blue-500" />
+                      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Primary
+                      </span>
                     </div>
-                  ) : (
-                    col1PRs.map((item) => {
-                      const cardId = `pr-card-${item.pr.repo_full_name}-${item.pr.number}`;
-                      const isInProcess = Boolean(activeAgentPRs[cardId]);
-                      return (
-                        <PRCard
-                          key={`col1-${cardId}`}
-                          customId={`col1-${cardId}`}
-                          prWithGates={item}
-                          isSelected={effectiveActiveCol1PRId === cardId}
-                          isInProcess={isInProcess}
-                          activeAgentInfo={activeAgentPRs[cardId]}
-                          onClearActiveAgent={handleClearActiveAgent}
-                          onTriggerGate={handleTriggerGate}
-                          currentUser={currentUser}
-                          onMergePR={handleMergePR}
-                          onOpenWorktree={handleOpenWorktree}
-                        />
-                      );
-                    })
-                  )}
-                </div>
-              </div>
 
-              {/* COLUMN 2 */}
-              <div className="repository-panel" data-column="secondary">
-                {/* Column 2 Repository Selector Header */}
-                <div className="repository-heading">
-                  <div className="flex items-center gap-2">
-                    <GitPullRequest className="w-3.5 h-3.5 text-purple-500" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                      Secondary
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Repo:</span>
-                    <select
-                      aria-label="Secondary repository"
-                      value={col2Repo}
-                      onChange={(e) => handleCol2RepoChange(e.target.value)}
-                      className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-purple-700 focus:outline-none focus:border-purple-400 cursor-pointer"
-                    >
-                      {monitoredRepos.map((repo) => (
-                        <option key={repo} value={repo} disabled={monitoredRepos.length > 1 && repo === col1Repo}>
-                          {repo} {repo === col1Repo ? '(Selected in Col 1)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Column 2 Scrollable Content */}
-                <div ref={col2ScrollRef} className="repository-scroll">
-                  {col2PRs.length === 0 ? (
-                    <div className="p-8 text-center rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-400 italic">
-                      No open PRs found for <strong className="text-gray-600">{col2Repo}</strong>.
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Repo:</span>
+                      <select
+                        aria-label="Primary repository"
+                        value={col1Repo}
+                        onChange={(e) => handleCol1RepoChange(e.target.value)}
+                        className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-blue-700 focus:outline-none focus:border-blue-400 cursor-pointer"
+                      >
+                        {monitoredRepos.map((repo) => (
+                          <option key={repo} value={repo} disabled={monitoredRepos.length > 1 && repo === col2Repo}>
+                            {repo} {repo === col2Repo ? '(Selected in Col 2)' : ''}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  ) : (
-                    col2PRs.map((item) => {
-                      const cardId = `pr-card-${item.pr.repo_full_name}-${item.pr.number}`;
-                      const isInProcess = Boolean(activeAgentPRs[cardId]);
-                      return (
-                        <PRCard
-                          key={`col2-${cardId}`}
-                          customId={`col2-${cardId}`}
-                          prWithGates={item}
-                          isSelected={effectiveActiveCol2PRId === cardId}
-                          isInProcess={isInProcess}
-                          activeAgentInfo={activeAgentPRs[cardId]}
-                          onClearActiveAgent={handleClearActiveAgent}
-                          onTriggerGate={handleTriggerGate}
-                          currentUser={currentUser}
-                          onMergePR={handleMergePR}
-                          onOpenWorktree={handleOpenWorktree}
-                        />
-                      );
-                    })
-                  )}
+                  </div>
+
+                  {/* Column 1 Scrollable Content */}
+                  <div ref={col1ScrollRef} className="repository-scroll">
+                    {col1PRs.length === 0 ? (
+                      <div className="p-8 text-center rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-400 italic">
+                        No open PRs found for <strong className="text-gray-600">{col1Repo}</strong>.
+                      </div>
+                    ) : (
+                      col1PRs.map((item) => {
+                        const cardId = `pr-card-${item.pr.repo_full_name}-${item.pr.number}`;
+                        const isInProcess = Boolean(activeAgentPRs[cardId]);
+                        return (
+                          <PRCard
+                            key={`col1-${cardId}`}
+                            customId={`col1-${cardId}`}
+                            prWithGates={item}
+                            isSelected={effectiveActiveCol1PRId === cardId}
+                            isInProcess={isInProcess}
+                            activeAgentInfo={activeAgentPRs[cardId]}
+                            onClearActiveAgent={handleClearActiveAgent}
+                            onTriggerGate={handleTriggerGate}
+                            currentUser={currentUser}
+                            onMergePR={handleMergePR}
+                            onOpenWorktree={handleOpenWorktree}
+                          />
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* COLUMN 2 */}
+                <div className="repository-panel" data-column="secondary">
+                  {/* Column 2 Repository Selector Header */}
+                  <div className="repository-heading">
+                    <div className="flex items-center gap-2">
+                      <GitPullRequest className="w-3.5 h-3.5 text-purple-500" />
+                      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Secondary
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-gray-400 font-medium hidden sm:inline">Repo:</span>
+                      <select
+                        aria-label="Secondary repository"
+                        value={col2Repo}
+                        onChange={(e) => handleCol2RepoChange(e.target.value)}
+                        className="px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs font-semibold text-purple-700 focus:outline-none focus:border-purple-400 cursor-pointer"
+                      >
+                        {monitoredRepos.map((repo) => (
+                          <option key={repo} value={repo} disabled={monitoredRepos.length > 1 && repo === col1Repo}>
+                            {repo} {repo === col1Repo ? '(Selected in Col 1)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Column 2 Scrollable Content */}
+                  <div ref={col2ScrollRef} className="repository-scroll">
+                    {col2PRs.length === 0 ? (
+                      <div className="p-8 text-center rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-400 italic">
+                        No open PRs found for <strong className="text-gray-600">{col2Repo}</strong>.
+                      </div>
+                    ) : (
+                      col2PRs.map((item) => {
+                        const cardId = `pr-card-${item.pr.repo_full_name}-${item.pr.number}`;
+                        const isInProcess = Boolean(activeAgentPRs[cardId]);
+                        return (
+                          <PRCard
+                            key={`col2-${cardId}`}
+                            customId={`col2-${cardId}`}
+                            prWithGates={item}
+                            isSelected={effectiveActiveCol2PRId === cardId}
+                            isInProcess={isInProcess}
+                            activeAgentInfo={activeAgentPRs[cardId]}
+                            onClearActiveAgent={handleClearActiveAgent}
+                            onTriggerGate={handleTriggerGate}
+                            currentUser={currentUser}
+                            onMergePR={handleMergePR}
+                            onOpenWorktree={handleOpenWorktree}
+                          />
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-      </main>
+          )}
+        </main>
       </div>
 
       <MergeHistorySidebar monitoredRepos={monitoredRepos} refreshKey={historyRefreshKey} />
@@ -936,7 +938,7 @@ export default function Dashboard() {
           isOpen={!!activeGateTrigger}
           onClose={() => {
             setActiveGateTrigger(null);
-            fetchPRs();
+            fetchPRs(true);
           }}
           prWithGates={activeGateTrigger.prWithGates}
           gateResult={activeGateTrigger.gateResult}

@@ -72,7 +72,7 @@ export function evaluateGateRule(
 
   // Condition: hasMergeConflicts
   if (rule.conditions.hasMergeConflicts) {
-    if (!pr.has_merge_conflicts) {
+    if (!pr.has_merge_conflicts && pr.mergeable_state !== 'dirty') {
       passed = false;
     }
   }
@@ -147,6 +147,8 @@ export function formatPromptTemplate(template: string, pr: PullRequest): string 
 
   const lastCommentAuthor = effectiveLastComment?.user.login || 'Unknown';
   const lastCommentBody = effectiveLastComment?.body || 'No recent comment';
+  const authorLogin = pr.user?.login || 'unknown';
+  const authorMention = `@${authorLogin}`;
 
   const commentsSummary = effectiveComments
     .map((c) => `- @${c.user.login} (${c.is_review_comment ? 'Code Review' : 'Comment'}): ${c.body}`)
@@ -160,8 +162,14 @@ export function formatPromptTemplate(template: string, pr: PullRequest): string 
     .replace(/{branch}/g, pr.head.ref)
     .replace(/{base_branch}/g, pr.base.ref)
     .replace(/{base branch}/g, pr.base.ref)
-    .replace(/{author}/g, pr.user.login)
-    .replace(/{pr_author}/g, `@${pr.user.login}`)
+    .replace(/{target_branch}/g, pr.base.ref)
+    .replace(/{target branch}/g, pr.base.ref)
+    .replace(/@\s*{pr_author}/g, authorMention)
+    .replace(/{pr_author}/g, authorMention)
+    .replace(/@\s*pr_author\b/g, authorMention)
+    .replace(/@\s*{author}/g, authorMention)
+    .replace(/@\s*author\b/g, authorMention)
+    .replace(/{author}/g, authorLogin)
     .replace(/{last_comment_author}/g, lastCommentAuthor)
     .replace(/{last_comment_body}/g, lastCommentBody)
     .replace(/{comments_summary}/g, commentsSummary || 'No comments');
@@ -236,7 +244,7 @@ export function isPrAwaitingComment(
   const effectiveLastComment = getEffectiveLastComment(pr.comments, pr.last_comment);
   const lastUser = (effectiveLastComment?.user.login ?? pr.user.login).toLowerCase();
   const notOurLatestComment = lastUser !== effectiveUser;
-  const userOwnedWithConflict = isOwner && Boolean(pr.has_merge_conflicts);
+  const userOwnedWithConflict = isOwner && (Boolean(pr.has_merge_conflicts) || pr.mergeable_state === 'dirty');
 
   if (userOwnedWithConflict) return true;
   if (!notOurLatestComment) return false;

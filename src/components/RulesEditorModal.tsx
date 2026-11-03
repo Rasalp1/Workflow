@@ -366,7 +366,7 @@ function RulesForm({
                 Available variables:{" "}
                 <code>
                   {
-                    "{pr_number}, {pr_title}, {repo_name}, {branch}, {last_comment_body}"
+                    "{pr_number}, {pr_title}, {author}, @{author}, {branch}, {base_branch}, {target_branch}, {repo_name}, {last_comment_body}"
                   }
                 </code>
               </p>

@@ -113,6 +113,23 @@ describe('Bot Detection', () => {
       };
       assert.strictEqual(isBotComment(comment), false);
     });
+
+    it('does not flag comments from human users performed via assistant apps (e.g. ChatGPT Codex Connector)', () => {
+      const comment: PRComment = {
+        id: 6,
+        user: { login: 'Rasalp1', avatar_url: '', html_url: '', type: 'User' },
+        body: '## Review follow-up\n\nI checked each finding against the branch and addressed the issues.',
+        created_at: '2026-11-02T23:07:50Z',
+        updated_at: '2026-11-02T23:07:50Z',
+        html_url: '',
+        is_review_comment: false,
+        performed_via_github_app: {
+          slug: 'chatgpt-codex-connector',
+          name: 'ChatGPT Codex Connector',
+        },
+      };
+      assert.strictEqual(isBotComment(comment), false);
+    });
   });
 
   describe('filterNonBotComments and getEffectiveLastComment', () => {

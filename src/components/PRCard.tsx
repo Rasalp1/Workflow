@@ -346,7 +346,14 @@ export const PRCard: React.FC<PRCardProps> = ({
             )}
 
             {/* Mergeability Status */}
-            {!pr.has_merge_conflicts && pr.mergeable_state === "behind" ? (
+            {pr.has_merge_conflicts || pr.mergeable_state === "dirty" ? (
+              <span
+                className="text-xs flex items-center gap-1 text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 font-medium"
+                title={`Branch ${pr.head.ref} has merge conflicts against ${pr.base.ref}`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> Conflicts
+              </span>
+            ) : pr.mergeable_state === "behind" ? (
               <span
                 className="text-xs flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 font-medium"
                 title={`Branch ${pr.head.ref} is behind ${pr.base.ref}`}
@@ -354,9 +361,7 @@ export const PRCard: React.FC<PRCardProps> = ({
                 <Clock className="w-3.5 h-3.5 text-amber-500" /> Behind{" "}
                 {pr.base.ref}
               </span>
-            ) : !pr.has_merge_conflicts &&
-              (pr.has_merge_conflicts === false ||
-                pr.mergeable_state === "clean") ? (
+            ) : pr.mergeable_state === "clean" ? (
               <span className="text-xs flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-medium">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />{" "}
                 Mergeable
@@ -452,7 +457,7 @@ export const PRCard: React.FC<PRCardProps> = ({
       )}
 
       {/* High-Visibility Conflict Callout Banner */}
-      {pr.has_merge_conflicts && (
+      {(pr.has_merge_conflicts || pr.mergeable_state === "dirty") && (
         <div className="mt-4 p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-3">
           <div className="p-1.5 rounded-lg bg-rose-100 text-rose-500 shrink-0">
             <AlertTriangle className="w-4 h-4" />
@@ -683,7 +688,7 @@ export const PRCard: React.FC<PRCardProps> = ({
               )}
             </button>
           </div>
-          {pr.has_merge_conflicts && (
+          {(pr.has_merge_conflicts || pr.mergeable_state === "dirty") && (
             <span
               className="text-xs flex items-center gap-1 text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 font-semibold"
               title={`Merge conflicts detected on branch ${pr.head.ref} against ${pr.base.ref}`}
@@ -847,7 +852,7 @@ export const PRCard: React.FC<PRCardProps> = ({
               </button>
             )}
 
-          {!pr.is_draft && !pr.has_merge_conflicts && (
+          {!pr.is_draft && !pr.has_merge_conflicts && pr.mergeable_state !== "dirty" && (
             <button
               onClick={handleOpenMergeModal}
               disabled={isMerging}

@@ -77,9 +77,19 @@ describe('Logic Gates Evaluator', () => {
   });
 
   it('should correctly replace prompt placeholders', () => {
-    const template = 'PR #{pr_number} by @{author} on branch {branch} in {repo_name} - {pr_body}';
+    const template = 'PR #{pr_number} by @{author} on branch {branch} targeting {target_branch} ({target branch}) in {repo_name} - {pr_body}';
     const formatted = formatPromptTemplate(template, dummyPR);
-    assert.strictEqual(formatted, 'PR #42 by @alice on branch fix-auth in org/repo - Resolves issue with token refresh');
+    assert.strictEqual(formatted, 'PR #42 by @alice on branch fix-auth targeting main (main) in org/repo - Resolves issue with token refresh');
+  });
+
+  it('should resolve all author placeholder variations (@pr_author, @ pr_author, @{author}, {pr_author}, etc)', () => {
+    assert.strictEqual(formatPromptTemplate('@{author} please check', dummyPR), '@alice please check');
+    assert.strictEqual(formatPromptTemplate('{author} is the author', dummyPR), 'alice is the author');
+    assert.strictEqual(formatPromptTemplate('@pr_author Please solve merge conflicts', dummyPR), '@alice Please solve merge conflicts');
+    assert.strictEqual(formatPromptTemplate('@ pr_author Please solve merge conflicts', dummyPR), '@alice Please solve merge conflicts');
+    assert.strictEqual(formatPromptTemplate('{pr_author} Please solve merge conflicts', dummyPR), '@alice Please solve merge conflicts');
+    assert.strictEqual(formatPromptTemplate('@{pr_author} Please solve merge conflicts', dummyPR), '@alice Please solve merge conflicts');
+    assert.strictEqual(formatPromptTemplate('@author please verify', dummyPR), '@alice please verify');
   });
 
   it('should pass review-with-context rule when PR owned by non-user and last comment is by non-user even without prior user comments', () => {
@@ -149,6 +159,45 @@ describe('Logic Gates Evaluator', () => {
     assert.strictEqual(result.passed, false);
   });
 
+  it('should pass hasMergeConflicts rule when has_merge_conflicts is true or mergeable_state is dirty', () => {
+    const conflictRule: LogicalGateRule = {
+      id: 'solve-conflicts',
+      name: 'Solve Conflicts',
+      description: 'Solve conflicts against main',
+      enabled: true,
+      buttonLabel: 'Solve conflicts',
+      actionType: 'spawn_agent',
+      conditions: {
+        hasMergeConflicts: true,
+      },
+      promptTemplate: 'Solve conflicts for PR #{pr_number}',
+    };
+
+    // Case 1: has_merge_conflicts: true
+    const prWithConflictFlag: PullRequest = {
+      ...dummyPR,
+      has_merge_conflicts: true,
+      mergeable_state: 'dirty',
+    };
+    assert.strictEqual(evaluateGateRule(conflictRule, prWithConflictFlag, 'alice', 'codex').passed, true);
+
+    // Case 2: mergeable_state: 'dirty' but has_merge_conflicts is false or undefined
+    const prWithDirtyState: PullRequest = {
+      ...dummyPR,
+      has_merge_conflicts: false,
+      mergeable_state: 'dirty',
+    };
+    assert.strictEqual(evaluateGateRule(conflictRule, prWithDirtyState, 'alice', 'codex').passed, true);
+
+    // Case 3: clean PR
+    const cleanPR: PullRequest = {
+      ...dummyPR,
+      has_merge_conflicts: false,
+      mergeable_state: 'clean',
+    };
+    assert.strictEqual(evaluateGateRule(conflictRule, cleanPR, 'alice', 'codex').passed, false);
+  });
+
   describe('isPrAwaitingComment', () => {
     it('returns true when last comment is by someone else', () => {
       // dummyPR author is alice, last comment is by bob
@@ -188,6 +237,24 @@ describe('Logic Gates Evaluator', () => {
       };
       // Even though alice is the last commenter, because she owns it and it has conflicts, it requires attention!
       assert.strictEqual(isPrAwaitingComment(userLastConflictPR, 'alice'), true);
+    });
+
+    it('returns true when user owned PR has mergeable_state dirty even if has_merge_conflicts is false', () => {
+      const dirtyPR: PullRequest = {
+        ...dummyPR,
+        last_comment: {
+          id: 2,
+          user: { login: 'alice', avatar_url: '', html_url: '' },
+          body: 'Done fixing!',
+          created_at: '2026-08-12T11:00:00Z',
+          updated_at: '2026-08-12T11:00:00Z',
+          html_url: '',
+          is_review_comment: false,
+        },
+        has_merge_conflicts: false,
+        mergeable_state: 'dirty',
+      };
+      assert.strictEqual(isPrAwaitingComment(dirtyPR, 'alice'), true);
     });
 
     it('returns false when non-user PR has two consecutive comments by two other distinct users', () => {

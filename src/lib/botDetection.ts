@@ -60,8 +60,34 @@ export function isBotComment(comment?: Partial<PRComment> | Record<string, unkno
   const user = (comment as { user?: Partial<PRUser> }).user;
   if (isBotUser(user)) return true;
 
-  const performedViaApp = (comment as Record<string, unknown>).performed_via_github_app;
-  if (Boolean(performedViaApp)) return true;
+  const isExplicitHumanUser =
+    user && typeof user.type === 'string' && user.type.toLowerCase() === 'user';
+
+  if (!isExplicitHumanUser) {
+    const performedViaApp = (comment as Record<string, unknown>).performed_via_github_app as
+      | { slug?: string; name?: string; owner?: { login?: string } }
+      | null
+      | undefined;
+
+    if (performedViaApp && typeof performedViaApp === 'object') {
+      const slug = typeof performedViaApp.slug === 'string' ? performedViaApp.slug.toLowerCase().trim() : '';
+      const name = typeof performedViaApp.name === 'string' ? performedViaApp.name.toLowerCase().trim() : '';
+      const owner = typeof performedViaApp.owner?.login === 'string' ? performedViaApp.owner.login.toLowerCase().trim() : '';
+
+      const isBotApp = KNOWN_BOT_LOGINS.some(
+        (bot) =>
+          slug === bot ||
+          slug.startsWith(`${bot}-`) ||
+          slug.endsWith(`-${bot}`) ||
+          name === bot ||
+          name.startsWith(`${bot}-`) ||
+          name.endsWith(`-${bot}`) ||
+          owner === bot
+      );
+
+      if (isBotApp) return true;
+    }
+  }
 
   const body = typeof (comment as { body?: string }).body === 'string'
     ? (comment as { body?: string }).body!
