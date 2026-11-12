@@ -35,7 +35,7 @@ export const DEFAULT_RULES: LogicalGateRule[] = [
       prOwnedByCurrentUser: true,
       lastCommentNotCurrentUser: true,
     },
-    promptTemplate: `Address review issues for PR #{pr_number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer  blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
+    promptTemplate: `Address review issues for PR #{pr_number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
   },
   {
     id: 'address-latest-comment',
@@ -54,10 +54,10 @@ export const DEFAULT_RULES: LogicalGateRule[] = [
   },
   {
     id: 'code-review',
-    name: 'Perform Code Review',
+    name: 'Review',
     description: 'PR owned by someone else with no comments yet.',
     enabled: true,
-    buttonLabel: 'Code Review',
+    buttonLabel: 'Review',
     buttonIcon: 'Eye',
     buttonColor: 'emerald',
     actionType: 'spawn_agent',
@@ -115,7 +115,13 @@ For each issue:
 - Specific line references
 - Clear explanation of the problem
 - Suggested solution with code example
-- Rationale for the change`,
+- Rationale for the change
+
+## Publish Review Comment
+
+When you have completed your review, post your findings as a comment on PR #{pr_number}. Ensure you use the correct review comment type:
+- Request changes if changes or fixes are needed before merging.
+- Approve otherwise if the pull request looks good and is ready to merge.`,
   },
   {
     id: 'opencode-review',
@@ -152,7 +158,7 @@ Review code changes against base branch '{base_branch}'. Verify correctness, edg
       lastCommentNotCurrentUser: true,
       notReviewedByOthers: true,
     },
-    promptTemplate: `Look at the complete comment history on the pr that exists on this branch, PR #{pr_number}. We’re the reviewer. Has the author adressed all the issues we identified? Are there any new issues that have been created? Is the author pushing back on anything we’ve said in a previous review? Why? Do they do so rightfully, or are they just disobedient? Do a complete code review of this PR. Think long and hard to verify that the claimed fixes are in place, and try to find any new issues that have arisen, and try to find unrelated issues on this PR that were missed before! When you’ve completed your code review, publish a "changes requested" comment type on the PR with your detailed feedback.`,
+    promptTemplate: `Look at the complete comment history on the pr that exists on this branch, PR #{pr_number}. We’re the reviewer. Has the author adressed all the issues we identified? Are there any new issues that have been created? Is the author pushing back on anything we’ve said in a previous review? Why? Do they do so rightfully, or is their pushback not justified? Do a complete code review of this PR. Think long and hard to verify that the claimed fixes are in place, and try to find any new issues that have arisen, and try to find unrelated issues on this PR that were missed before! When you’ve completed your code review, publish a "changes requested" comment type on the PR with your detailed feedback if you do find changes. Otherwise, published an approved review explaining why it's approved. `,
   },
   {
     id: 'review-latest-comment',
@@ -168,19 +174,18 @@ Review code changes against base branch '{base_branch}'. Verify correctness, edg
       lastCommentNotCurrentUser: true,
       notReviewedByOthers: true,
     },
-    promptTemplate: `Review PR #{pr_number} ({pr_title}) against branch {base_branch}, focusing specifically on the author’s recentmost response by @{last_comment_author}:\n\n"{last_comment_body}"\n\nWe’re the reviewer. Instead of re-evaluating the full historical comment backlog, focus specifically on this latest update and comment. Has the author addressed the specific points raised in this recentmost feedback? Are the claimed fixes in place in the code, or are they pushing back rightfully? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
+    promptTemplate: `Review PR #{pr_number} ({pr_title}) against branch {base_branch}, focusing specifically on the author’s recentmost response by @{last_comment_author}:\n\n"{last_comment_body}"\n\nWe’re the reviewer. Instead of re-evaluating the full PR comment history, focus specifically on this latest update and comment. Has the author addressed the specific points raised in the review? Are the claimed fixes in place in the code, or are they pushing back? If they are pushing back, why? Are they doing so rightfully or not? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
   },
   {
     id: 'rebase-user-pr',
-    name: 'Solve Conflicts Against Main',
-    description: 'PR owned by user that has merge conflicts.',
+    name: 'Solve Conflicts',
+    description: 'Pull request that has merge conflicts.',
     enabled: true,
-    buttonLabel: 'Solve conflicts against main',
+    buttonLabel: 'Solve conflicts',
     buttonIcon: 'GitBranch',
     buttonColor: 'amber',
     actionType: 'spawn_agent',
     conditions: {
-      prOwnedByCurrentUser: true,
       hasMergeConflicts: true,
     },
     promptTemplate: `Solve conflicts against {base_branch} for PR #{pr_number} ({pr_title}) in repository {repo_name} on branch '{branch}'.\n\nFetch origin and merge origin/{base_branch} into '{branch}'. Solve conflicts and any issues the best way you can. Don't look at only git-identified conflicts, but also at structural intention. Take a step back and assess the codebase as a whole. Does anything break with the merge? Are any intentions, from either side, lost? Verify clean test execution.\n\nOnly resort to rebasing (git rebase origin/{base_branch}) if merging does not work or if nothing else works.\n\nOnce you’re done, push the changes to the branch (only force push if you had to resort to rebasing) and post a comment on the PR explaining how conflicts were resolved.`,
@@ -190,7 +195,7 @@ Review code changes against base branch '{base_branch}'. Verify correctness, edg
     name: 'Request Author Solve Merge Conflicts Comment',
     description: 'PR owned by non-user that has merge conflicts.',
     enabled: true,
-    buttonLabel: 'Ask author to solve merge conflicts against target branch',
+    buttonLabel: 'Author: Solve conflicts',
     buttonIcon: 'GitBranch',
     buttonColor: 'amber',
     actionType: 'post_comment',
@@ -270,9 +275,13 @@ export async function loadConfig(): Promise<AppConfig> {
         }
       }
 
+      const storedRepos = Array.isArray(data.monitoredRepos) ? data.monitoredRepos : [];
+      const combinedRepos = Array.from(new Set([...storedRepos, ...envRepos]));
+
       return {
         ...defaultConfig,
         ...data,
+        monitoredRepos: combinedRepos.length > 0 ? combinedRepos : defaultConfig.monitoredRepos,
         repoPaths: { ...defaultConfig.repoPaths, ...cleanedStoredPaths },
       };
     } catch (e) {
@@ -314,17 +323,64 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
         let hasChanges = missingDefaultRules.length > 0;
         const cleanedRules = mergedRules.map((r: LogicalGateRule) => {
           let updated = r;
-          if (updated.id === 'review-with-context' && updated.conditions) {
-            const restConditions = { ...updated.conditions };
+          if (updated.id === 'review-with-context') {
+            const defaultReviewWithContext = DEFAULT_RULES.find((dr) => dr.id === 'review-with-context');
+            const restConditions = { ...(updated.conditions || {}) };
             delete restConditions.hasCommentsByCurrentUser;
-            updated = { ...updated, conditions: { notReviewedByOthers: true, ...restConditions } };
+            let tmplChanged = false;
+            if (
+              typeof updated.promptTemplate === 'string' &&
+              (updated.promptTemplate.includes('disobedient') ||
+                !updated.promptTemplate.includes('is their pushback not justified?'))
+            ) {
+              tmplChanged = true;
+            }
+            updated = {
+              ...updated,
+              conditions: { notReviewedByOthers: true, ...restConditions },
+              promptTemplate: tmplChanged ? (defaultReviewWithContext?.promptTemplate || updated.promptTemplate) : updated.promptTemplate,
+            };
+            if (tmplChanged) {
+              hasChanges = true;
+            }
+          }
+          if (updated.id === 'review-latest-comment') {
+            const defaultReviewLatest = DEFAULT_RULES.find((dr) => dr.id === 'review-latest-comment');
+            if (
+              typeof updated.promptTemplate === 'string' &&
+              (updated.promptTemplate.includes('historical comment backlog') ||
+                !updated.promptTemplate.includes('full PR comment history'))
+            ) {
+              updated = {
+                ...updated,
+                promptTemplate: defaultReviewLatest?.promptTemplate || updated.promptTemplate,
+              };
+              hasChanges = true;
+            }
+          }
+          if (updated.id === 'address-issues') {
+            if (
+              typeof updated.promptTemplate === 'string' &&
+              updated.promptTemplate.includes('don’t trust the reviewer  blindly')
+            ) {
+              const defaultAddressIssues = DEFAULT_RULES.find((dr) => dr.id === 'address-issues');
+              updated = {
+                ...updated,
+                promptTemplate: defaultAddressIssues?.promptTemplate || updated.promptTemplate,
+              };
+              hasChanges = true;
+            }
           }
           if (updated.id === 'rebase-non-user-pr') {
             const defaultNonUserConflictRule = DEFAULT_RULES.find((dr) => dr.id === 'rebase-non-user-pr');
-            if (updated.buttonLabel === 'Rebase' || updated.buttonLabel === 'Ask author to rebase') {
+            if (
+              updated.buttonLabel === 'Rebase' ||
+              updated.buttonLabel === 'Ask author to rebase' ||
+              updated.buttonLabel === 'Ask author to solve merge conflicts against target branch'
+            ) {
               updated = {
                 ...updated,
-                buttonLabel: defaultNonUserConflictRule?.buttonLabel || 'Ask author to solve merge conflicts against target branch',
+                buttonLabel: defaultNonUserConflictRule?.buttonLabel || 'Author: Solve conflicts',
               };
               hasChanges = true;
             }
@@ -350,34 +406,66 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
               hasChanges = true;
             }
           }
-          if (updated.id === 'rebase-user-pr' && (updated.buttonLabel === 'Rebase' || updated.name === 'Rebase User PR Branch')) {
+          if (updated.id === 'rebase-user-pr') {
             const defaultConflictRule = DEFAULT_RULES.find((dr) => dr.id === 'rebase-user-pr');
-            updated = {
-              ...updated,
-              name: defaultConflictRule?.name || 'Solve Conflicts Against Main',
-              buttonLabel: defaultConflictRule?.buttonLabel || 'Solve conflicts against main',
-              promptTemplate:
-                updated.promptTemplate.includes('run git rebase origin/{base_branch}')
-                  ? (defaultConflictRule?.promptTemplate || updated.promptTemplate)
-                  : updated.promptTemplate,
-            };
-            hasChanges = true;
+            const restConditions = { ...(updated.conditions || {}) };
+            let conditionsChanged = false;
+            if (restConditions.prOwnedByCurrentUser) {
+              delete restConditions.prOwnedByCurrentUser;
+              conditionsChanged = true;
+            }
+            if (
+              updated.buttonLabel === 'Rebase' ||
+              updated.buttonLabel === 'Solve conflicts against main' ||
+              updated.name === 'Rebase User PR Branch' ||
+              updated.name === 'Solve Conflicts Against Main' ||
+              conditionsChanged
+            ) {
+              updated = {
+                ...updated,
+                name: defaultConflictRule?.name || 'Solve Conflicts',
+                buttonLabel: defaultConflictRule?.buttonLabel || 'Solve conflicts',
+                conditions: restConditions,
+                promptTemplate:
+                  updated.promptTemplate.includes('run git rebase origin/{base_branch}')
+                    ? (defaultConflictRule?.promptTemplate || updated.promptTemplate)
+                    : updated.promptTemplate,
+              };
+              hasChanges = true;
+            }
           }
-          if (
-            updated.id === 'code-review' &&
-            (updated.agentOverride === 'ocr' ||
-              (typeof updated.promptTemplate === 'string' &&
-                updated.promptTemplate.startsWith('PR #{pr_number}: {pr_title}')))
-          ) {
+          if (updated.id === 'code-review') {
             const defaultCodeReview = DEFAULT_RULES.find((dr) => dr.id === 'code-review');
             if (defaultCodeReview) {
               const rest = { ...updated };
-              delete rest.agentOverride;
-              updated = {
-                ...rest,
-                promptTemplate: defaultCodeReview.promptTemplate,
-              };
-              hasChanges = true;
+              let changed = false;
+              if (rest.agentOverride === 'ocr') {
+                delete rest.agentOverride;
+                changed = true;
+              }
+              if (rest.name === 'Perform Code Review') {
+                rest.name = defaultCodeReview.name;
+                changed = true;
+              }
+              if (rest.buttonLabel === 'Code Review' || rest.buttonLabel === 'Perform Code Review') {
+                rest.buttonLabel = defaultCodeReview.buttonLabel;
+                changed = true;
+              }
+              if (
+                typeof rest.promptTemplate === 'string' &&
+                (rest.promptTemplate.startsWith('PR #{pr_number}: {pr_title}') ||
+                  (!rest.promptTemplate.includes('Publish Review Comment') &&
+                    !rest.promptTemplate.includes('comment on PR') &&
+                    !rest.promptTemplate.includes('post your review findings') &&
+                    !rest.promptTemplate.includes('post your findings')))
+              ) {
+                rest.promptTemplate = defaultCodeReview.promptTemplate;
+                changed = true;
+              }
+              if (changed) {
+                updated = rest;
+                hasChanges = true;
+              }
             }
           }
           return updated;

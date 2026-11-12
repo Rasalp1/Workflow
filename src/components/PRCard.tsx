@@ -136,10 +136,10 @@ export const PRCard: React.FC<PRCardProps> = ({
       buttonColor: "emerald",
       actionType: "spawn_agent",
       conditions: {},
-      promptTemplate: `Review PR #{pr_number} ({pr_title}) against branch {base_branch}, focusing specifically on the author’s recentmost response by @{last_comment_author}:\n\n"{last_comment_body}"\n\nWe’re the reviewer. Instead of re-evaluating the full historical comment backlog, focus specifically on this latest update and comment. Has the author addressed the specific points raised in this recentmost feedback? Are the claimed fixes in place in the code, or are they pushing back rightfully? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
+      promptTemplate: `Review PR #{pr_number} ({pr_title}) against branch {base_branch}, focusing specifically on the author’s recentmost response by @{last_comment_author}:\n\n"{last_comment_body}"\n\nWe’re the reviewer. Instead of re-evaluating the full PR comment history, focus specifically on this latest update and comment. Has the author addressed the specific points raised in the review? Are the claimed fixes in place in the code, or are they pushing back? If they are pushing back, why? Are they doing so rightfully or not? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
     },
     passed: false,
-    generatedPrompt: `Review PR #${pr.number} (${pr.title}) against branch ${pr.base.ref}, focusing specifically on the author’s recentmost response by @${effectiveLastComment?.user.login || "author"}:\n\n"${effectiveLastComment?.body || "No recent comment"}"\n\nWe’re the reviewer. Instead of re-evaluating the full historical comment backlog, focus specifically on this latest update and comment. Has the author addressed the specific points raised in this recentmost feedback? Are the claimed fixes in place in the code, or are they pushing back rightfully? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
+    generatedPrompt: `Review PR #${pr.number} (${pr.title}) against branch ${pr.base.ref}, focusing specifically on the author’s recentmost response by @${effectiveLastComment?.user.login || "author"}:\n\n"${effectiveLastComment?.body || "No recent comment"}"\n\nWe’re the reviewer. Instead of re-evaluating the full PR comment history, focus specifically on this latest update and comment. Has the author addressed the specific points raised in the review? Are the claimed fixes in place in the code, or are they pushing back? If they are pushing back, why? Are they doing so rightfully or not? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
     targetAgent: "codex",
   };
   const hasPassedReviewLatest = passedGates.some(
@@ -152,11 +152,37 @@ export const PRCard: React.FC<PRCardProps> = ({
   const hasPassedOpenCodeReview = passedGates.some(
     (g) => g.rule.id === "opencode-review",
   );
+
+  const solveConflictsGate = evaluatedGates.find(
+    (g) => g.rule.id === "rebase-user-pr",
+  ) || {
+    rule: {
+      id: "rebase-user-pr",
+      name: "Solve Conflicts",
+      description: "Pull request that has merge conflicts.",
+      enabled: true,
+      buttonLabel: "Solve conflicts",
+      buttonIcon: "GitBranch",
+      buttonColor: "amber",
+      actionType: "spawn_agent",
+      conditions: { hasMergeConflicts: true },
+      promptTemplate: `Solve conflicts against {base_branch} for PR #{pr_number} ({pr_title}) in repository {repo_name} on branch '{branch}'.\n\nFetch origin and merge origin/{base_branch} into '{branch}'. Solve conflicts and any issues the best way you can. Don't look at only git-identified conflicts, but also at structural intention. Take a step back and assess the codebase as a whole. Does anything break with the merge? Are any intentions, from either side, lost? Verify clean test execution.\n\nOnly resort to rebasing (git rebase origin/{base_branch}) if merging does not work or if nothing else works.\n\nOnce you’re done, push the changes to the branch (only force push if you had to resort to rebasing) and post a comment on the PR explaining how conflicts were resolved.`,
+    },
+    passed: false,
+    generatedPrompt: `Solve conflicts against ${pr.base.ref} for PR #${pr.number} (${pr.title}) in repository ${pr.repo_full_name} on branch '${pr.head.ref}'.\n\nFetch origin and merge origin/${pr.base.ref} into '${pr.head.ref}'. Solve conflicts and any issues the best way you can. Don't look at only git-identified conflicts, but also at structural intention. Take a step back and assess the codebase as a whole. Does anything break with the merge? Are any intentions, from either side, lost? Verify clean test execution.\n\nOnly resort to rebasing (git rebase origin/${pr.base.ref}) if merging does not work or if nothing else works.\n\nOnce you’re done, push the changes to the branch (only force push if you had to resort to rebasing) and post a comment on the PR explaining how conflicts were resolved.`,
+    targetAgent: "codex",
+  };
+  const hasPassedSolveConflicts = passedGates.some(
+    (g) => g.rule.id === "rebase-user-pr",
+  );
+  const hasAuthorSolveConflicts = passedGates.some(
+    (g) => g.rule.id === "rebase-non-user-pr",
+  );
   const isOwner = currentUser
     ? pr.user.login.toLowerCase() === currentUser.toLowerCase()
     : evaluatedGates.some(
-        (g) => g.rule.conditions?.prOwnedByCurrentUser && g.passed,
-      );
+      (g) => g.rule.conditions?.prOwnedByCurrentUser && g.passed,
+    );
 
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
@@ -537,13 +563,12 @@ export const PRCard: React.FC<PRCardProps> = ({
 
                       {comment.review_state ? (
                         <span
-                          className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md font-mono border font-semibold ${
-                            comment.review_state === "CHANGES_REQUESTED"
+                          className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md font-mono border font-semibold ${comment.review_state === "CHANGES_REQUESTED"
                               ? "bg-rose-50 text-rose-700 border-rose-200"
                               : comment.review_state === "APPROVED"
                                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                                 : "bg-purple-50 text-purple-700 border-purple-200"
-                          }`}
+                            }`}
                         >
                           <FileCode className="w-3 h-3" />
                           PR Review: {comment.review_state.replace(/_/g, " ")}
@@ -580,11 +605,10 @@ export const PRCard: React.FC<PRCardProps> = ({
                   {/* Rebase Status Indicator (if comment asks for rebase) */}
                   {rebaseStatus.asksForRebase && (
                     <div
-                      className={`mt-3 p-3 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs transition-all ${
-                        rebaseStatus.hasCommitsSince
+                      className={`mt-3 p-3 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs transition-all ${rebaseStatus.hasCommitsSince
                           ? "bg-emerald-50/90 border-emerald-200 text-emerald-900"
                           : "bg-amber-50/90 border-amber-200 text-amber-900"
-                      }`}
+                        }`}
                     >
                       <div className="flex items-start sm:items-center gap-2.5">
                         {rebaseStatus.hasCommitsSince ? (
@@ -604,34 +628,30 @@ export const PRCard: React.FC<PRCardProps> = ({
                                 : "No Commits Made Since Request"}
                             </span>
                             <span
-                              className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold ${
-                                rebaseStatus.hasCommitsSince
+                              className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold ${rebaseStatus.hasCommitsSince
                                   ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                                   : "bg-amber-100 text-amber-800 border border-amber-200"
-                              }`}
+                                }`}
                             >
                               {rebaseStatus.hasCommitsSince
-                                ? `${rebaseStatus.commitsSinceCount} commit${
-                                    rebaseStatus.commitsSinceCount > 1
-                                      ? "s"
-                                      : ""
-                                  } since comment`
+                                ? `${rebaseStatus.commitsSinceCount} commit${rebaseStatus.commitsSinceCount > 1
+                                  ? "s"
+                                  : ""
+                                } since comment`
                                 : "0 commits since comment"}
                             </span>
                           </div>
                           <p
-                            className={`text-[11px] mt-0.5 leading-normal ${
-                              rebaseStatus.hasCommitsSince
+                            className={`text-[11px] mt-0.5 leading-normal ${rebaseStatus.hasCommitsSince
                                 ? "text-emerald-700"
                                 : "text-amber-700"
-                            }`}
+                              }`}
                           >
                             {rebaseStatus.hasCommitsSince
-                              ? `Commits were pushed to ${pr.head.ref} after this comment${
-                                  rebaseStatus.latestCommitDate
-                                    ? ` (latest ${formatRelativeTime(rebaseStatus.latestCommitDate)})`
-                                    : ""
-                                }.`
+                              ? `Commits were pushed to ${pr.head.ref} after this comment${rebaseStatus.latestCommitDate
+                                ? ` (latest ${formatRelativeTime(rebaseStatus.latestCommitDate)})`
+                                : ""
+                              }.`
                               : `No new commits have been pushed to ${pr.head.ref} since this comment asked for a rebase.`}
                           </p>
                         </div>
@@ -729,10 +749,10 @@ export const PRCard: React.FC<PRCardProps> = ({
               <span>{gate.rule.buttonLabel}</span>
               {(gate.rule.actionType === "spawn_agent" ||
                 !gate.rule.actionType) && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
-                  {gate.targetAgent}
-                </span>
-              )}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                    {gate.targetAgent}
+                  </span>
+                )}
             </button>
           ))}
 
@@ -751,10 +771,10 @@ export const PRCard: React.FC<PRCardProps> = ({
                 </span>
                 {(addressIssuesGate.rule.actionType === "spawn_agent" ||
                   !addressIssuesGate.rule.actionType) && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
-                    {addressIssuesGate.targetAgent}
-                  </span>
-                )}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                      {addressIssuesGate.targetAgent}
+                    </span>
+                  )}
               </button>
             )}
 
@@ -774,10 +794,10 @@ export const PRCard: React.FC<PRCardProps> = ({
                 </span>
                 {(addressLatestGate.rule.actionType === "spawn_agent" ||
                   !addressLatestGate.rule.actionType) && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
-                    {addressLatestGate.targetAgent}
-                  </span>
-                )}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                      {addressLatestGate.targetAgent}
+                    </span>
+                  )}
               </button>
             )}
 
@@ -801,10 +821,10 @@ export const PRCard: React.FC<PRCardProps> = ({
                 </span>
                 {(reviewWithContextGate.rule.actionType === "spawn_agent" ||
                   !reviewWithContextGate.rule.actionType) && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
-                    {reviewWithContextGate.targetAgent}
-                  </span>
-                )}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                      {reviewWithContextGate.targetAgent}
+                    </span>
+                  )}
               </button>
             )}
 
@@ -825,10 +845,10 @@ export const PRCard: React.FC<PRCardProps> = ({
                 </span>
                 {(reviewLatestGate.rule.actionType === "spawn_agent" ||
                   !reviewLatestGate.rule.actionType) && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
-                    {reviewLatestGate.targetAgent}
-                  </span>
-                )}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                      {reviewLatestGate.targetAgent}
+                    </span>
+                  )}
               </button>
             )}
 
@@ -849,6 +869,30 @@ export const PRCard: React.FC<PRCardProps> = ({
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
                   ocr
                 </span>
+              </button>
+            )}
+
+          {!hasPassedSolveConflicts &&
+            (hasAuthorSolveConflicts ||
+              pr.has_merge_conflicts ||
+              pr.mergeable_state === "dirty") &&
+            !pr.is_draft &&
+            solveConflictsGate.rule.enabled !== false && (
+              <button
+                onClick={() => onTriggerGate(prWithGates, solveConflictsGate)}
+                className="gate-button gate-button--amber"
+                title="Solve merge conflicts with AI agent"
+              >
+                <GitBranch className="w-3.5 h-3.5 text-amber-600" />
+                <span>
+                  {solveConflictsGate.rule.buttonLabel || "Solve conflicts"}
+                </span>
+                {(solveConflictsGate.rule.actionType === "spawn_agent" ||
+                  !solveConflictsGate.rule.actionType) && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                      {solveConflictsGate.targetAgent}
+                    </span>
+                  )}
               </button>
             )}
 

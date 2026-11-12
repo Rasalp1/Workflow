@@ -1038,6 +1038,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         
         guard !isDraft else { return result }
         
+        // Ensure "Solve conflicts" is also shown whenever "Author: Solve conflicts" is shown or conflicts exist
+        if (addedIds.contains("rebase-non-user-pr") || pr.has_merge_conflicts == true) && !addedIds.contains("rebase-user-pr") {
+            if let gate = gates.first(where: { $0.rule?.id == "rebase-user-pr" }) {
+                result.append(gate)
+                addedIds.insert("rebase-user-pr")
+            }
+        }
+        
         // 2. Add standard Review / Address gates matching the web app (PRCard.tsx)
         if isOwner {
             // Address gates for PR author
@@ -1101,7 +1109,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let cleanTitle = pr.title.replacingOccurrences(of: "\n", with: " ")
                 let ruleId = gate.rule?.id ?? ""
                 if ruleId.contains("review") {
-                    prompt = "Perform extensive and deep code review on this branch against base branch \(baseBranch) for PR #\(pr.number) (\(cleanTitle)). Analyze security, performance, code quality, architecture, and testing. Provide constructive, actionable feedback."
+                    prompt = "Perform extensive and deep code review on this branch against base branch \(baseBranch) for PR #\(pr.number) (\(cleanTitle)). Analyze security, performance, code quality, architecture, and testing. Provide constructive, actionable feedback. Post your review findings as a comment on PR #\(pr.number). Use the correct review comment type: request changes if needed or approve otherwise."
                 } else {
                     prompt = "Address review issues for PR #\(pr.number) (\(cleanTitle)). Look at the complete comment history on the PR, investigate the feedback, make the necessary changes, verify with tests, and push the branch."
                 }
