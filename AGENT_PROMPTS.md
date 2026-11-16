@@ -9,14 +9,15 @@ This document contains the complete prompts and templates configured for all age
 - [Agent Actions (`spawn_agent`)](#agent-actions-spawn_agent)
   - [1. Review (Initial Code Review)](#1-review-initial-code-review)
   - [2. OpenCode Review (Alibaba OCR / Luna)](#2-opencode-review-alibaba-ocr--luna)
-  - [3. Review With Context (Full Historical Review)](#3-review-with-context-full-historical-review)
-  - [4. Review Recent Comment (Focused Incremental Review)](#4-review-recent-comment-focused-incremental-review)
-  - [5. Address Review Issues (Full Backlog)](#5-address-review-issues-full-backlog)
-  - [6. Address Recent Comment (Single Comment Focus)](#6-address-recent-comment-single-comment-focus)
-  - [7. Solve Conflicts (Merge Conflict Resolution)](#7-solve-conflicts-merge-conflict-resolution)
+  - [3. Review Light (Critical Blockers Scan)](#3-review-light-critical-blockers-scan)
+  - [4. Review With Context (Full Historical Review)](#4-review-with-context-full-historical-review)
+  - [5. Review Recent Comment (Focused Incremental Review)](#5-review-recent-comment-focused-incremental-review)
+  - [6. Address Review Issues (Full Backlog)](#6-address-review-issues-full-backlog)
+  - [7. Address Recent Comment (Single Comment Focus)](#7-address-recent-comment-single-comment-focus)
+  - [8. Solve Conflicts (Merge Conflict Resolution)](#8-solve-conflicts-merge-conflict-resolution)
 - [Automated Non-Agent Actions](#automated-non-agent-actions)
-  - [8. Author: Solve conflicts (`post_comment`)](#8-author-solve-conflicts-post_comment)
-  - [9. Convert Draft to Open PR (`undraft_pr`)](#9-convert-draft-to-open-pr-undraft_pr)
+  - [9. Author: Solve conflicts (`post_comment`)](#9-author-solve-conflicts-post_comment)
+  - [10. Convert Draft to Open PR (`undraft_pr`)](#10-convert-draft-to-open-pr-undraft_pr)
 - [Available Template Variables](#available-template-variables)
 
 ---
@@ -125,7 +126,43 @@ Review code changes against base branch '{base_branch}'. Verify correctness, edg
 
 ---
 
-### 3. Review With Context (Full Historical Review)
+### 3. Review Light (Critical Blockers Scan)
+
+- **Rule ID**: `review-light`
+- **Button Label**: `Review Light`
+- **Icon**: `Eye` (emerald)
+- **Agent**: Default CLI Agent (`codex` / `claude`)
+- **Action Type**: `spawn_agent`
+- **Trigger Conditions**:
+  - `prOwnedByNonCurrentUser`: PR authored by someone else
+  - `notReviewedByOthers`: Not handled by 2 other consecutive reviewers
+
+#### Complete Prompt Template
+
+```markdown
+Perform a lightweight code review on PR #{pr_number} ({pr_title}) against branch {base_branch}.
+
+## Role & Review Focus
+You are a senior software engineer conducting a fast, high-signal, lightweight code review.
+Do NOT focus on minor nitpicks, stylistic nuances, code formatting, or trivial suggestions.
+
+Your review has two strict goals:
+1. **Critical Merge Blockers**: Scan specifically and solely for absolutely critical merge blockers. This includes:
+   - Fatal bugs, logic errors, or crashes/unhandled exceptions
+   - Severe security vulnerabilities or sensitive data exposure
+   - Data corruption, data loss, or broken database integrity
+   - Breaking changes or critical regressions that prevent merging
+2. **Requirements Verification**: Check whether the PR requirements and core intentions have been addressed by the author.
+
+## Decision & Publish Review Comment
+When your review is complete, publish your review on PR #{pr_number}:
+- **If any critical merge blockers are found**: Submit a "REQUEST_CHANGES" review comment detailing each critical blocker, specific line references, and the necessary fix before this can be merged.
+- **If NO critical merge blockers are found AND the requirements have been addressed by the author**: Recommend approval by submitting an "APPROVE" review comment confirming that the core requirements are met and there are no critical blockers.
+```
+
+---
+
+### 4. Review With Context (Full Historical Review)
 
 - **Rule ID**: `review-with-context`
 - **Button Label**: `Review with context`
@@ -144,7 +181,7 @@ Look at the complete comment history on the pr that exists on this branch, PR #{
 
 ---
 
-### 4. Review Recent Comment (Focused Incremental Review)
+### 5. Review Recent Comment (Focused Incremental Review)
 
 - **Rule ID**: `review-latest-comment`
 - **Button Label**: `Review Latest`
@@ -167,7 +204,7 @@ We’re the reviewer. Instead of re-evaluating the full PR comment history, focu
 
 ---
 
-### 5. Address Review Issues (Full Backlog)
+### 6. Address Review Issues (Full Backlog)
 
 - **Rule ID**: `address-issues`
 - **Button Label**: `Address Issues`
@@ -187,7 +224,7 @@ Look at the complete comment history on the pr that exists on this branch. Read 
 
 ---
 
-### 6. Address Recent Comment (Single Comment Focus)
+### 7. Address Recent Comment (Single Comment Focus)
 
 - **Rule ID**: `address-latest-comment`
 - **Button Label**: `Address Latest`
@@ -209,7 +246,7 @@ Focus specifically and solely on addressing the issues and feedback raised in th
 
 ---
 
-### 7. Solve Conflicts (Merge Conflict Resolution)
+### 8. Solve Conflicts (Merge Conflict Resolution)
 
 - **Rule ID**: `rebase-user-pr`
 - **Button Label**: `Solve conflicts`
@@ -236,7 +273,7 @@ Once you’re done, push the changes to the branch (only force push if you had t
 
 These actions do not launch CLI agents; they trigger direct GitHub API calls from the dashboard.
 
-### 8. Author: Solve conflicts (`post_comment`)
+### 9. Author: Solve conflicts (`post_comment`)
 
 - **Rule ID**: `rebase-non-user-pr`
 - **Button Label**: `Author: Solve conflicts`
@@ -250,7 +287,7 @@ These actions do not launch CLI agents; they trigger direct GitHub API calls fro
   @{author} Please solve merge conflicts against target branch.
   ```
 
-### 9. Convert Draft to Open PR (`undraft_pr`)
+### 10. Convert Draft to Open PR (`undraft_pr`)
 
 - **Rule ID**: `convert-draft-to-ready`
 - **Button Label**: `Convert PR`

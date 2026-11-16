@@ -1081,6 +1081,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
             
+            if let gate = gates.first(where: { $0.rule?.id == "review-light" }),
+               let id = gate.rule?.id, !addedIds.contains(id) {
+                result.append(gate)
+                addedIds.insert(id)
+            }
+            
             // In PRCard.tsx, "Address Issues" is also available as a fallback button
             if let gate = gates.first(where: { $0.rule?.id == "address-issues" }),
                let id = gate.rule?.id, !addedIds.contains(id) {
@@ -1108,7 +1114,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let baseBranch = pr.base?.ref ?? "main"
                 let cleanTitle = pr.title.replacingOccurrences(of: "\n", with: " ")
                 let ruleId = gate.rule?.id ?? ""
-                if ruleId.contains("review") {
+                if ruleId == "review-light" {
+                    prompt = "Perform a lightweight code review on PR #\(pr.number) (\(cleanTitle)) against base branch \(baseBranch). Scan only for critical merge blockers and verify that the author addressed the requirements. If no critical blockers are found and requirements are met, recommend an approval comment; otherwise request changes."
+                } else if ruleId.contains("review") {
                     prompt = "Perform extensive and deep code review on this branch against base branch \(baseBranch) for PR #\(pr.number) (\(cleanTitle)). Analyze security, performance, code quality, architecture, and testing. Provide constructive, actionable feedback. Post your review findings as a comment on PR #\(pr.number). Use the correct review comment type: request changes if needed or approve otherwise."
                 } else {
                     prompt = "Address review issues for PR #\(pr.number) (\(cleanTitle)). Look at the complete comment history on the PR, investigate the feedback, make the necessary changes, verify with tests, and push the branch."

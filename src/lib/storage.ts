@@ -145,6 +145,38 @@ When you have completed your review, post your findings as a comment on PR #{pr_
 Review code changes against base branch '{base_branch}'. Verify correctness, edge cases, safety, performance, and adherence to requirements.`,
   },
   {
+    id: 'review-light',
+    name: 'Review Light',
+    description: 'Lightweight code review scanning only for critical merge blockers and verifying requirements before recommending approval.',
+    enabled: true,
+    buttonLabel: 'Review Light',
+    buttonIcon: 'Eye',
+    buttonColor: 'emerald',
+    actionType: 'spawn_agent',
+    conditions: {
+      prOwnedByNonCurrentUser: true,
+      notReviewedByOthers: true,
+    },
+    promptTemplate: `Perform a lightweight code review on PR #{pr_number} ({pr_title}) against branch {base_branch}.
+
+## Role & Review Focus
+You are a senior software engineer conducting a fast, high-signal, lightweight code review.
+Do NOT focus on minor nitpicks, stylistic nuances, code formatting, or trivial suggestions.
+
+Your review has two strict goals:
+1. **Critical Merge Blockers**: Scan specifically and solely for absolutely critical merge blockers. This includes:
+   - Fatal bugs, logic errors, or crashes/unhandled exceptions
+   - Severe security vulnerabilities or sensitive data exposure
+   - Data corruption, data loss, or broken database integrity
+   - Breaking changes or critical regressions that prevent merging
+2. **Requirements Verification**: Check whether the PR requirements and core intentions have been addressed by the author.
+
+## Decision & Publish Review Comment
+When your review is complete, publish your review on PR #{pr_number}:
+- **If any critical merge blockers are found**: Submit a "REQUEST_CHANGES" review comment detailing each critical blocker, specific line references, and the necessary fix before this can be merged.
+- **If NO critical merge blockers are found AND the requirements have been addressed by the author**: Recommend approval by submitting an "APPROVE" review comment confirming that the core requirements are met and there are no critical blockers.`,
+  },
+  {
     id: 'review-with-context',
     name: 'Review With Context',
     description: 'PR owned by someone else with new comments.',
@@ -356,6 +388,29 @@ export async function loadRules(): Promise<LogicalGateRule[]> {
                 promptTemplate: defaultReviewLatest?.promptTemplate || updated.promptTemplate,
               };
               hasChanges = true;
+            }
+          }
+          if (updated.id === 'review-light') {
+            const defaultReviewLight = DEFAULT_RULES.find((dr) => dr.id === 'review-light');
+            if (defaultReviewLight) {
+              const rest = { ...updated };
+              let changed = false;
+              if (rest.agentOverride) {
+                delete rest.agentOverride;
+                changed = true;
+              }
+              if (
+                !rest.promptTemplate ||
+                rest.promptTemplate.includes('("Review Light")') ||
+                rest.promptTemplate.includes('PR Description & Requirements')
+              ) {
+                rest.promptTemplate = defaultReviewLight.promptTemplate;
+                changed = true;
+              }
+              if (changed) {
+                updated = rest;
+                hasChanges = true;
+              }
             }
           }
           if (updated.id === 'address-issues') {

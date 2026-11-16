@@ -153,6 +153,33 @@ export const PRCard: React.FC<PRCardProps> = ({
     (g) => g.rule.id === "opencode-review",
   );
 
+  const reviewLightGate = evaluatedGates.find(
+    (g) => g.rule.id === "review-light",
+  ) || {
+    rule: {
+      id: "review-light",
+      name: "Review Light",
+      description:
+        "Lightweight code review scanning only for critical merge blockers and verifying requirements before recommending approval.",
+      enabled: true,
+      buttonLabel: "Review Light",
+      buttonIcon: "Eye",
+      buttonColor: "emerald",
+      actionType: "spawn_agent",
+      conditions: {
+        prOwnedByNonCurrentUser: true,
+        notReviewedByOthers: true,
+      },
+      promptTemplate: `Perform a lightweight code review on PR #{pr_number} ({pr_title}) against branch {base_branch}.\n\n## Role & Review Focus\nYou are a senior software engineer conducting a fast, high-signal, lightweight code review.\nDo NOT focus on minor nitpicks, stylistic nuances, code formatting, or trivial suggestions.\n\nYour review has two strict goals:\n1. **Critical Merge Blockers**: Scan specifically and solely for absolutely critical merge blockers. This includes:\n   - Fatal bugs, logic errors, or crashes/unhandled exceptions\n   - Severe security vulnerabilities or sensitive data exposure\n   - Data corruption, data loss, or broken database integrity\n   - Breaking changes or critical regressions that prevent merging\n2. **Requirements Verification**: Check whether the PR requirements and core intentions have been addressed by the author.\n\n## Decision & Publish Review Comment\nWhen your review is complete, publish your review on PR #{pr_number}:\n- **If any critical merge blockers are found**: Submit a "REQUEST_CHANGES" review comment detailing each critical blocker, specific line references, and the necessary fix before this can be merged.\n- **If NO critical merge blockers are found AND the requirements have been addressed by the author**: Recommend approval by submitting an "APPROVE" review comment confirming that the core requirements are met and there are no critical blockers.`,
+    },
+    passed: false,
+    generatedPrompt: `Perform a lightweight code review on PR #${pr.number} (${pr.title}) against branch ${pr.base.ref}.\n\n## Role & Review Focus\nYou are a senior software engineer conducting a fast, high-signal, lightweight code review.\nDo NOT focus on minor nitpicks, stylistic nuances, code formatting, or trivial suggestions.\n\nYour review has two strict goals:\n1. **Critical Merge Blockers**: Scan specifically and solely for absolutely critical merge blockers. This includes:\n   - Fatal bugs, logic errors, or crashes/unhandled exceptions\n   - Severe security vulnerabilities or sensitive data exposure\n   - Data corruption, data loss, or broken database integrity\n   - Breaking changes or critical regressions that prevent merging\n2. **Requirements Verification**: Check whether the PR requirements and core intentions have been addressed by the author.\n\n## Decision & Publish Review Comment\nWhen your review is complete, publish your review on PR #${pr.number}:\n- **If any critical merge blockers are found**: Submit a "REQUEST_CHANGES" review comment detailing each critical blocker, specific line references, and the necessary fix before this can be merged.\n- **If NO critical merge blockers are found AND the requirements have been addressed by the author**: Recommend approval by submitting an "APPROVE" review comment confirming that the core requirements are met and there are no critical blockers.`,
+    targetAgent: "codex",
+  };
+  const hasPassedReviewLight = passedGates.some(
+    (g) => g.rule.id === "review-light",
+  );
+
   const solveConflictsGate = evaluatedGates.find(
     (g) => g.rule.id === "rebase-user-pr",
   ) || {
@@ -564,10 +591,10 @@ export const PRCard: React.FC<PRCardProps> = ({
                       {comment.review_state ? (
                         <span
                           className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md font-mono border font-semibold ${comment.review_state === "CHANGES_REQUESTED"
-                              ? "bg-rose-50 text-rose-700 border-rose-200"
-                              : comment.review_state === "APPROVED"
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : "bg-purple-50 text-purple-700 border-purple-200"
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : comment.review_state === "APPROVED"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-purple-50 text-purple-700 border-purple-200"
                             }`}
                         >
                           <FileCode className="w-3 h-3" />
@@ -606,8 +633,8 @@ export const PRCard: React.FC<PRCardProps> = ({
                   {rebaseStatus.asksForRebase && (
                     <div
                       className={`mt-3 p-3 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs transition-all ${rebaseStatus.hasCommitsSince
-                          ? "bg-emerald-50/90 border-emerald-200 text-emerald-900"
-                          : "bg-amber-50/90 border-amber-200 text-amber-900"
+                        ? "bg-emerald-50/90 border-emerald-200 text-emerald-900"
+                        : "bg-amber-50/90 border-amber-200 text-amber-900"
                         }`}
                     >
                       <div className="flex items-start sm:items-center gap-2.5">
@@ -629,8 +656,8 @@ export const PRCard: React.FC<PRCardProps> = ({
                             </span>
                             <span
                               className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold ${rebaseStatus.hasCommitsSince
-                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                  : "bg-amber-100 text-amber-800 border border-amber-200"
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                : "bg-amber-100 text-amber-800 border border-amber-200"
                                 }`}
                             >
                               {rebaseStatus.hasCommitsSince
@@ -643,8 +670,8 @@ export const PRCard: React.FC<PRCardProps> = ({
                           </div>
                           <p
                             className={`text-[11px] mt-0.5 leading-normal ${rebaseStatus.hasCommitsSince
-                                ? "text-emerald-700"
-                                : "text-amber-700"
+                              ? "text-emerald-700"
+                              : "text-amber-700"
                               }`}
                           >
                             {rebaseStatus.hasCommitsSince
@@ -869,6 +896,29 @@ export const PRCard: React.FC<PRCardProps> = ({
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
                   ocr
                 </span>
+              </button>
+            )}
+
+          {!hasPassedReviewLight &&
+            reviewLightGate &&
+            reviewLightGate.rule.enabled !== false &&
+            !pr.is_draft &&
+            !isOwner && (
+              <button
+                onClick={() => onTriggerGate(prWithGates, reviewLightGate)}
+                className="gate-button gate-button--emerald"
+                title="Lightweight code review scanning only for critical merge blockers and verifying requirements"
+              >
+                <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                <span>
+                  {reviewLightGate.rule.buttonLabel || "Review Light"}
+                </span>
+                {(reviewLightGate.rule.actionType === "spawn_agent" ||
+                  !reviewLightGate.rule.actionType) && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/8 text-gray-600 font-mono">
+                      {reviewLightGate.targetAgent}
+                    </span>
+                  )}
               </button>
             )}
 

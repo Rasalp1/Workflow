@@ -39,10 +39,58 @@ describe('Rules and Storage Configuration', () => {
     );
   });
 
-  it('loadRules returns both code-review and opencode-review', async () => {
+  it('DEFAULT_RULES includes Review Light (review-light) rule for critical merge blockers and requirements check', () => {
+    const reviewLight = DEFAULT_RULES.find((r) => r.id === 'review-light');
+    assert.ok(reviewLight, 'review-light rule must exist in DEFAULT_RULES');
+    assert.strictEqual(reviewLight.name, 'Review Light');
+    assert.strictEqual(reviewLight.buttonLabel, 'Review Light');
+    assert.strictEqual(reviewLight.buttonColor, 'emerald');
+    assert.strictEqual(reviewLight.actionType, 'spawn_agent');
+    assert.strictEqual(reviewLight.agentOverride, undefined, 'review-light should not override agent so Codex/Claude are spawned');
+    assert.strictEqual(reviewLight.conditions.prOwnedByNonCurrentUser, true);
+    assert.strictEqual(reviewLight.conditions.notReviewedByOthers, true);
+    assert.ok(
+      reviewLight.promptTemplate.includes('lightweight code review'),
+      'review-light prompt should mention lightweight code review'
+    );
+    assert.strictEqual(
+      reviewLight.promptTemplate.includes('("Review Light")'),
+      false,
+      'review-light prompt should not contain ("Review Light")'
+    );
+    assert.strictEqual(
+      reviewLight.promptTemplate.includes('PR Description & Requirements'),
+      false,
+      'review-light prompt should not contain PR Description & Requirements section'
+    );
+    assert.strictEqual(
+      reviewLight.promptTemplate.includes('{pr_body}'),
+      false,
+      'review-light prompt should not contain {pr_body}'
+    );
+    assert.ok(
+      reviewLight.promptTemplate.includes('Critical Merge Blockers') &&
+      reviewLight.promptTemplate.includes('critical merge blockers'),
+      'review-light prompt should focus on critical merge blockers'
+    );
+    assert.ok(
+      reviewLight.promptTemplate.includes('requirements') &&
+      reviewLight.promptTemplate.includes('addressed by the author'),
+      'review-light prompt should verify requirements addressed by the author'
+    );
+    assert.ok(
+      reviewLight.promptTemplate.includes('Recommend approval') ||
+      reviewLight.promptTemplate.includes('recommend an approval') ||
+      reviewLight.promptTemplate.includes('APPROVE'),
+      'review-light prompt should recommend approval when no blockers exist and requirements are addressed'
+    );
+  });
+
+  it('loadRules returns code-review, opencode-review, and review-light', async () => {
     const rules = await loadRules();
     const codeReview = rules.find((r) => r.id === 'code-review');
     const ocrReview = rules.find((r) => r.id === 'opencode-review');
+    const reviewLight = rules.find((r) => r.id === 'review-light');
     const reviewWithContext = rules.find((r) => r.id === 'review-with-context');
     const reviewLatest = rules.find((r) => r.id === 'review-latest-comment');
 
@@ -52,6 +100,12 @@ describe('Rules and Storage Configuration', () => {
 
     assert.ok(ocrReview, 'opencode-review must exist in loaded rules');
     assert.strictEqual(ocrReview.agentOverride, 'ocr');
+
+    assert.ok(reviewLight, 'review-light must exist in loaded rules');
+    assert.strictEqual(reviewLight.agentOverride, undefined, 'review-light in loaded rules should use default agent (codex/claude)');
+    assert.strictEqual(reviewLight.buttonLabel, 'Review Light');
+    assert.ok(reviewLight.promptTemplate.includes('critical merge blockers'));
+    assert.ok(reviewLight.promptTemplate.includes('addressed by the author'));
 
     assert.ok(reviewWithContext, 'review-with-context must exist in loaded rules');
     assert.ok(reviewWithContext.promptTemplate.includes('is their pushback not justified?'));
