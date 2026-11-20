@@ -105,6 +105,7 @@ describe('Security Utilities', () => {
     it('accepts valid agent types', () => {
       assert.strictEqual(validateAgentType('codex'), 'codex');
       assert.strictEqual(validateAgentType('claude'), 'claude');
+      assert.strictEqual(validateAgentType('agy'), 'agy');
       assert.strictEqual(validateAgentType('ocr'), 'ocr');
     });
 

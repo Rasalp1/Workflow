@@ -11,7 +11,7 @@
 <p align="center">
   <b>A local-first, developer-centric PR management dashboard & CLI AI agent dispatcher.</b>
   <br />
-  Streamline pull request code reviews, automate review readiness evaluation with customizable logic gates, and spawn AI coding agents (Codex or Claude) directly inside local Git worktrees.
+  Streamline pull request code reviews, automate review readiness evaluation with customizable logic gates, and spawn AI coding agents (Codex, Claude, or Antigravity) directly inside local Git worktrees.
 </p>
 
 </div>
@@ -43,7 +43,7 @@ Reviewing multiple pull requests across fast-moving repositories creates immense
 **Workflow PR Viewer** bridges your web browser and local development environment:
 1. **Unified Dual-Column Feed**: Monitor pull requests across multiple repositories concurrently with independent scrolling columns and instant repository filtering.
 2. **Automated Logic Gates**: Define custom evaluation rules (e.g., *"Is the PR author myself, and did someone else leave the last review comment?"*) to immediately flag actionable PRs.
-3. **Seamless AI Agent Dispatching**: Launch supported CLI agents (`codex` or `claude`) pre-loaded with contextual prompts targeting specific PR branches.
+3. **Seamless AI Agent Dispatching**: Launch supported CLI agents (`codex`, `claude`, or `agy`) pre-loaded with contextual prompts targeting specific PR branches.
 4. **One-Click Git Worktree Isolation**: Resolve merge conflicts or review complex branch changes in an isolated Git worktree workspace without dirtying your main local working tree.
 
 ---
@@ -124,7 +124,7 @@ Workflow/
 | **Node.js** | **v20.0.0** or higher |
 | **Package Manager** | **npm** (v10+) |
 | **GitHub Access Token** | Fine-grained token limited to the configured repositories; metadata read access is required, and pull-request write access is required for comments, merges, and draft changes |
-| **CLI AI Agents (Optional)** | Installed `codex` or `claude` CLI binary |
+| **CLI AI Agents (Optional)** | Installed `codex`, `claude`, or `agy` CLI binary |
 
 ---
 
@@ -173,7 +173,7 @@ Configuration is managed via `.env.local` in the project root:
 # 1. GitHub token (fine-grained token limited to the configured repositories)
 GITHUB_TOKEN=ghp_your_github_personal_access_token_here
 
-# 2. Default CLI Agent Executable ("codex" or "claude")
+# 2. Default CLI Agent Executable ("codex", "claude", or "agy")
 DEFAULT_AGENT=codex
 
 # 3. Monitored Repositories (Comma-separated 'owner/repo' format)
@@ -271,7 +271,7 @@ To allow AppleScript keystrokes to open the integrated terminal, grant the appli
 | :--- | :--- | :--- |
 | `/api/prs` | `GET` | Fetches open PRs, comments, and CI statuses from GitHub API. |
 | `/api/prs/comment` | `POST` | Posts a new comment to a specified PR thread. |
-| `/api/agent/spawn` | `POST` | Launches a CLI agent (`codex`, `claude`) in terminal pre-loaded with prompt. |
+| `/api/agent/spawn` | `POST` | Launches a CLI agent (`codex`, `claude`, `agy`, `ocr`) in terminal pre-loaded with prompt. |
 | `/api/worktree/spawn` | `POST` | Spawns Git worktree for branch and opens terminal in IDE. |
 | `/api/rules` | `GET` / `POST` | Fetches or updates stored Logic Gate rules. |
 | `/api/config` | `GET` | Reads current application configuration & monitored repos. |

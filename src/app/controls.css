@@ -8,6 +8,7 @@
   --warning-soft: #fff5df;
   --agent-codex: #505dc9;
   --agent-claude: #aa502c;
+  --agent-agy: #0284c7;
   --agent-ocr: #059669;
 }
 
@@ -517,7 +518,7 @@
 }
 .agent-picker {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin-top: 4px;
 }
@@ -527,6 +528,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   border: 1px solid var(--border-strong);
   border-radius: 9px;
   padding: 14px 12px;
@@ -536,6 +538,10 @@
 .agent-option[data-agent="claude"] {
   --agent-color: var(--agent-claude);
   --agent-bg: #fff1e9;
+}
+.agent-option[data-agent="agy"] {
+  --agent-color: var(--agent-agy);
+  --agent-bg: #e0f2fe;
 }
 .agent-option[data-agent="ocr"] {
   --agent-color: var(--agent-ocr);
@@ -899,6 +905,14 @@
 .agent-working-banner[data-agent="claude"] :is(h4, p, span) {
   color: #8b492b;
 }
+.agent-working-banner[data-agent="agy"] {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  border-left-color: var(--agent-agy);
+}
+.agent-working-banner[data-agent="agy"] :is(h4, p, span) {
+  color: #075985;
+}
 .agent-working-banner[data-agent="ocr"] {
   background: #f0fdf4;
   border-color: #a7f3d0;
@@ -1021,6 +1035,10 @@
 .agent-working-banner[data-agent="claude"] {
   --working-color: var(--agent-claude);
   --working-tint: #f9d9c8;
+}
+.agent-working-banner[data-agent="agy"] {
+  --working-color: var(--agent-agy);
+  --working-tint: #bae6fd;
 }
 .agent-working-banner[data-agent="ocr"] {
   --working-color: var(--agent-ocr);

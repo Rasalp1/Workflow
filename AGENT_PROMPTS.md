@@ -24,7 +24,7 @@ This document contains the complete prompts and templates configured for all age
 
 ## Agent Actions (`spawn_agent`)
 
-These actions open a Git worktree and dispatch a CLI AI agent (such as Codex, Claude, or OCR) with the generated prompt.
+These actions open a Git worktree and dispatch a CLI AI agent (such as Codex, Claude, Antigravity `agy`, or OCR) with the generated prompt.
 
 ---
 
@@ -131,7 +131,7 @@ Review code changes against base branch '{base_branch}'. Verify correctness, edg
 - **Rule ID**: `review-light`
 - **Button Label**: `Review Light`
 - **Icon**: `Eye` (emerald)
-- **Agent**: Default CLI Agent (`codex` / `claude`)
+- **Agent**: Default CLI Agent (`codex` / `claude` / `agy`)
 - **Action Type**: `spawn_agent`
 - **Trigger Conditions**:
   - `prOwnedByNonCurrentUser`: PR authored by someone else

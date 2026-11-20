@@ -1,4 +1,4 @@
-export type AgentType = 'codex' | 'claude' | 'ocr';
+export type AgentType = 'codex' | 'claude' | 'agy' | 'ocr';
 
 export interface ActiveAgentInfo {
   agent: AgentType;

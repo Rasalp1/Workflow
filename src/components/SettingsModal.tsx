@@ -237,7 +237,7 @@ function SettingsForm({
           onChange={setDefaultAgent}
           disabled={isSaving}
           label="Default agent"
-          agents={["codex", "claude"]}
+          agents={["codex", "claude", "agy"]}
         />
         <label className="launch-setting" data-enabled={directAgentSpawn}>
           <span>

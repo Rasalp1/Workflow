@@ -192,9 +192,11 @@ function PromptForm({
                   : `Launch ${
                       agent === "claude"
                         ? "Claude Code"
-                        : agent === "ocr"
-                          ? "OpenCodeReview"
-                          : "Codex"
+                        : agent === "agy"
+                          ? "Antigravity"
+                          : agent === "ocr"
+                            ? "OpenCodeReview"
+                            : "Codex"
                     }`}
           </Button>
         </>

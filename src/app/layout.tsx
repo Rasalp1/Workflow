@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Workflow | Local-First PR Management & AI Agent Hub",
   description: "Developer-centric PR management dashboard & CLI AI agent dispatcher. Streamline pull request reviews, evaluate gate rules, and launch AI terminal agents.",
-  keywords: ["Git", "Pull Request", "PR Viewer", "Code Review", "AI Agent", "Codex", "Claude", "Worktree"],
+  keywords: ["Git", "Pull Request", "PR Viewer", "Code Review", "AI Agent", "Codex", "Claude", "Antigravity", "Worktree"],
   icons: {
     icon: [
       { url: "/icon.png", type: "image/png" },

@@ -201,5 +201,37 @@ describe('Antigravity integrated terminal launcher', () => {
     assert.ok(agentExecIndex !== -1, 'exec agent should be present');
     assert.ok(pullIndex < agentExecIndex, 'git pull must execute BEFORE agent CLI execution');
   });
+
+  it('spawnAgentInTerminal launches agy interactively with -i flag for prompts', async () => {
+    let runnerScriptPath = '';
+    const runCommand = async (command: string): Promise<unknown> => {
+      if (command.startsWith('osascript ')) {
+        const scriptPath = command.match(/^osascript ["'](.+)["']$/)?.[1];
+        assert.ok(scriptPath);
+        const appleScript = await readFile(scriptPath, 'utf8');
+        const match = appleScript.match(/cmdString to "cd \\"[^"]+\\" && bash \\"([^"]+)\\""/);
+        if (match?.[1]) {
+          runnerScriptPath = match[1];
+        }
+      }
+      return undefined;
+    };
+
+    const result = await spawnAgentInTerminal(
+      {
+        repoPath: process.cwd(),
+        agent: 'agy',
+        prompt: 'Review PR changes',
+      },
+      { runCommand }
+    );
+
+    assert.equal(result.success, true);
+    assert.ok(runnerScriptPath, 'Should have passed runner script to Antigravity terminal');
+
+    const runnerContent = await readFile(runnerScriptPath, 'utf8');
+    assert.ok(runnerContent.includes('AGENT="agy"'), 'Runner script should target agy agent');
+    assert.ok(runnerContent.includes('exec agy -i "$PROMPT"'), 'Runner script should invoke agy interactively with -i');
+  });
 });
 

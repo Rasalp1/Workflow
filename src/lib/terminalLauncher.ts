@@ -288,6 +288,12 @@ if [ "$AGENT" = "ocr" ]; then
   echo "✓ OCR Code Review complete! Run 'ocr viewer' to browse results."
   echo "──────────────────────────────────────────────────────────────────"
   exec $SHELL
+elif [ "$AGENT" = "agy" ]; then
+  if [ -n "$PROMPT" ]; then
+    exec agy -i "$PROMPT"
+  else
+    exec agy
+  fi
 else
   exec "$AGENT" "$PROMPT"
 fi

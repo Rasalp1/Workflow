@@ -286,6 +286,7 @@ function RulesForm({
                     <option value="ocr">OpenCodeReview (Alibaba OCR)</option>
                     <option value="codex">Codex (OpenAI)</option>
                     <option value="claude">Claude Code (Anthropic)</option>
+                    <option value="agy">Antigravity (Google agy)</option>
                   </select>
                 </div>
               )}

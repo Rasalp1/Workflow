@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { Check, Cpu, Eye, Terminal } from "lucide-react";
+import { Check, Cpu, Eye, Sparkles, Terminal } from "lucide-react";
 import type { AgentType } from "@/types";
 
 export function AgentPicker({
@@ -21,7 +21,9 @@ export function AgentPicker({
   const groupName = name || `${generatedId}-${label.replace(/\s+/g, "-")}`;
   const availableAgents: readonly AgentType[] =
     agents ||
-    (value === "ocr" ? (["ocr"] as const) : (["codex", "claude"] as const));
+    (value === "ocr"
+      ? (["ocr"] as const)
+      : (["codex", "claude", "agy"] as const));
 
   return (
     <fieldset className="field-group" disabled={disabled}>
@@ -57,6 +59,8 @@ export function AgentPicker({
                   <Terminal size={20} />
                 ) : agent === "claude" ? (
                   <Cpu size={20} />
+                ) : agent === "agy" ? (
+                  <Sparkles size={20} />
                 ) : (
                   <Eye size={20} />
                 )}
@@ -67,14 +71,18 @@ export function AgentPicker({
                     ? "Codex"
                     : agent === "claude"
                       ? "Claude Code"
-                      : "OpenCodeReview"}
+                      : agent === "agy"
+                        ? "Antigravity"
+                        : "OpenCodeReview"}
                 </strong>
                 <small>
                   {agent === "codex"
                     ? "OpenAI"
                     : agent === "claude"
                       ? "Anthropic"
-                      : "Alibaba OCR (Luna)"}
+                      : agent === "agy"
+                        ? "Google (agy)"
+                        : "Alibaba OCR (Luna)"}
                 </small>
               </span>
               {isSelected && (

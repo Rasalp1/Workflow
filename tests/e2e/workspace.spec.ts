@@ -406,6 +406,9 @@ test("settings supports selection, cancellation, and visible save failures", asy
   const writes = await mockWorkspace(page);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await assertDialogFits(page);
+  await expect(page.getByRole("radio", { name: /Antigravity/ })).toBeVisible();
+  await page.getByRole("radio", { name: /Antigravity/ }).check();
+  await expect(page.getByRole("radio", { name: /Antigravity/ })).toBeChecked();
   await page.screenshot({ path: info.outputPath("settings.png") });
   await page
     .getByRole("textbox", { name: "Monitored repositories" })

@@ -225,6 +225,13 @@ describe('Rules and Storage Configuration', () => {
       const updated = await loadConfig();
       assert.strictEqual(updated.defaultAgent, 'claude');
       assert.strictEqual(updated.repoPaths['REPO_PATH_DIRTY_KEY'], undefined);
+
+      await saveConfig({
+        ...original,
+        defaultAgent: 'agy',
+      });
+      const agyUpdated = await loadConfig();
+      assert.strictEqual(agyUpdated.defaultAgent, 'agy');
     } finally {
       await saveConfig(original);
     }
