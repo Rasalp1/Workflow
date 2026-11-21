@@ -12,27 +12,26 @@ stop_app = os.path.join(home, 'Desktop', 'Stop Workflow Server.app')
 workflow_scpt = f"""use AppleScript version "2.4"
 use scripting additions
 property projectDir : "{project_dir}"
-property logFile : "/tmp/workflow-dev.log"
+property logFile : "/tmp/workflow-server.log"
 
 on run
-	set startCmd to "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; cd " & quoted form of projectDir & " && npm run dev > " & quoted form of logFile & " 2>&1 & server_pid=$!; wait $server_pid"
+	set startCmd to "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; cd " & quoted form of projectDir & " && bash scripts/run-server.sh > " & quoted form of logFile & " 2>&1 & server_pid=$!; (for i in $(seq 1 120); do kill -0 $server_pid 2>/dev/null || break; lsof -ti :3000 -sTCP:LISTEN >/dev/null 2>&1 && {{ open http://localhost:3000; break; }}; sleep 0.5; done) >/dev/null 2>&1 & wait $server_pid"
 	set pidCheck to ""
 	try
-		set pidCheck to «event sysoexec» "lsof -ti :3000 -sTCP:LISTEN"
+		set pidCheck to do shell script "lsof -ti :3000 -sTCP:LISTEN"
 	on error
 		set pidCheck to ""
 	end try
 	if pidCheck is "" then
-		«event sysoexec» "open http://localhost:3000"
 		-- Keep the shell under this authorized applet. Do not detach it:
 		-- a detached server loses the applet's Apple Events launch context.
 		try
-			«event sysoexec» startCmd
+			do shell script startCmd
 		on error
 			-- Stop Workflow Server intentionally terminates this command.
 		end try
 	else
-		«event sysoexec» "open http://localhost:3000"
+		do shell script "open http://localhost:3000"
 	end if
 end run
 """
@@ -57,9 +56,12 @@ if os.path.exists(stop_app):
     subprocess.run(['osacompile', '-o', scpt_path], input=stop_scpt.encode('utf-8'), check=True)
     print(f"Compiled updated main.scpt into {stop_app}")
 
-# 2. Run transparent icon generator Swift script
+# 2. Run transparent icon generator Swift script (also re-signs the applets)
 print("Running scripts/make_transparent_icon.swift...")
 subprocess.run(['swift', 'scripts/make_transparent_icon.swift'], cwd=project_dir, check=True)
+
+# Reset stale AppleEvents TCC grant so macOS re-prompts cleanly against the new code hash
+subprocess.run(['tccutil', 'reset', 'AppleEvents', 'com.workflow.app'], stderr=subprocess.DEVNULL)
 
 # 3. Update Dock plist to clear stale bookmark and reset mod date
 dock_plist_path = os.path.join(home, 'Library', 'Preferences', 'com.apple.dock.plist')

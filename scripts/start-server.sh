@@ -1,14 +1,14 @@
 #!/bin/bash
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LOG_FILE="/tmp/workflow-dev.log"
+LOG_FILE="/tmp/workflow-server.log"
 
 if lsof -ti :3000 -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "Workflow dev server is already running on http://localhost:3000"
+    echo "Workflow server is already running on http://localhost:3000"
 else
-    echo "Starting Workflow dev server in background..."
+    echo "Starting Workflow production server in background..."
     cd "$PROJECT_DIR" || exit 1
-    nohup npm run dev > "$LOG_FILE" 2>&1 &
+    nohup bash "$PROJECT_DIR/scripts/run-server.sh" > "$LOG_FILE" 2>&1 &
     echo "Started. Logs available at $LOG_FILE"
 fi
 

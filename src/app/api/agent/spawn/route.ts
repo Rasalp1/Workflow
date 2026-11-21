@@ -1,18 +1,16 @@
 import { NextResponse } from 'next/server';
 import { spawnAgentInTerminal } from '@/lib/terminalLauncher';
-import { loadConfig } from '@/lib/storage';
+import { loadConfig, loadRules } from '@/lib/storage';
 import { validateConfiguredRepo, validateOrigin, validateAgentType } from '@/lib/security';
 import { buildAgentCardId, setActiveAgent } from '@/lib/activeAgents';
+import { getCachedPullRequest, getRepoPullRequests } from '@/lib/github';
+import { formatPromptTemplate } from '@/lib/logicGates';
 
 export async function POST(request: Request) {
   try {
     validateOrigin(request);
     const body = await request.json();
-    const { repoFullName, branchName, baseBranch, agent, prompt, cardId, prNumber } = body;
-
-    if (!prompt) {
-      return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
-    }
+    const { repoFullName, branchName, baseBranch, agent, prompt, ruleId, cardId, prNumber } = body;
 
     const config = await loadConfig();
     let configuredRepo: string;
@@ -20,6 +18,27 @@ export async function POST(request: Request) {
       configuredRepo = validateConfiguredRepo(repoFullName, config.monitoredRepos);
     } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid repository.' }, { status: 400 });
+    }
+
+    let resolvedPrompt: string = typeof prompt === 'string' ? prompt : '';
+    if (!resolvedPrompt.trim() && typeof ruleId === 'string' && ruleId.trim() && Number.isInteger(Number(prNumber))) {
+      const rules = await loadRules();
+      const matchedRule = rules.find((r) => r.id === ruleId);
+      if (matchedRule) {
+        const numericPr = Number(prNumber);
+        let pr = getCachedPullRequest(configuredRepo, numericPr);
+        if (!pr && config.githubToken) {
+          const prs = await getRepoPullRequests(configuredRepo, config.githubToken, false).catch(() => []);
+          pr = prs.find((item) => item.number === numericPr);
+        }
+        if (pr) {
+          resolvedPrompt = formatPromptTemplate(matchedRule.promptTemplate, pr);
+        }
+      }
+    }
+
+    if (!resolvedPrompt.trim()) {
+      return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
     }
     const targetPath =
       config.repoPaths[configuredRepo] ||
@@ -41,7 +60,7 @@ export async function POST(request: Request) {
       branchName,
       baseBranch,
       agent: targetAgent,
-      prompt,
+      prompt: resolvedPrompt,
     });
 
     if (!result.success) {

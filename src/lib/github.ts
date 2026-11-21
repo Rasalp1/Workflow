@@ -68,16 +68,77 @@ export function releaseSlot(): void {
 const repoPrsCache = new Map<string, { prs: PullRequest[]; timestamp: number }>();
 const REPO_CACHE_TTL_MS = 4000; // 4 seconds (coalesces rapid concurrent polls while keeping updates near-instant)
 
-// In-memory cache for detailed PR objects keyed by `${repoFullName}#${prNumber}@${updated_at}`
-const prDetailsCache = new Map<string, PullRequest>();
+// Bounded LRU cache for detailed PR objects keyed by `${repoFullName}#${prNumber}`.
+// Keying by PR identity (instead of including updated_at) ensures updates overwrite
+// the previous snapshot in place rather than leaking old snapshots indefinitely.
+const MAX_PR_DETAILS_CACHE_ENTRIES = 250;
+const prDetailsCache = new Map<string, { updatedAt: string; pr: PullRequest }>();
 
-// Merge history is loaded on demand by the right-hand drawer and has its own
+// Merge history is loaded on demand by the right-hand drawer and has its own TTL cache.
 const mergeHistoryCache = new Map<string, { merged: MergeHistoryEntry[]; closed: MergeHistoryEntry[]; timestamp: number }>();
 const MERGE_HISTORY_CACHE_TTL_MS = 30000;
+const MAX_MERGE_HISTORY_CACHE_ENTRIES = 20;
 
 // Deduplication maps to merge concurrent in-flight requests for the same repository
 const inFlightRepoFetches = new Map<string, Promise<PullRequest[]>>();
 const inFlightHistoryFetches = new Map<string, Promise<{ merged: MergeHistoryEntry[]; closed: MergeHistoryEntry[] }>>();
+
+function setPrDetailsCacheEntry(key: string, updatedAt: string, pr: PullRequest): void {
+  if (prDetailsCache.has(key)) {
+    prDetailsCache.delete(key);
+  }
+  prDetailsCache.set(key, { updatedAt, pr });
+  while (prDetailsCache.size > MAX_PR_DETAILS_CACHE_ENTRIES) {
+    const oldestKey = prDetailsCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    prDetailsCache.delete(oldestKey);
+  }
+}
+
+function pruneClosedPrsFromCache(repoFullName: string, openPrNumbers: Set<number>): void {
+  const prefix = `${repoFullName}#`;
+  for (const key of prDetailsCache.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    const prNumber = Number(key.slice(prefix.length));
+    if (!openPrNumbers.has(prNumber)) {
+      prDetailsCache.delete(key);
+    }
+  }
+}
+
+function sweepExpiredRepoCaches(now: number): void {
+  for (const [key, entry] of repoPrsCache.entries()) {
+    if (now - entry.timestamp >= REPO_CACHE_TTL_MS) {
+      repoPrsCache.delete(key);
+    }
+  }
+  for (const [key, entry] of mergeHistoryCache.entries()) {
+    if (now - entry.timestamp >= MERGE_HISTORY_CACHE_TTL_MS) {
+      mergeHistoryCache.delete(key);
+    }
+  }
+  while (mergeHistoryCache.size > MAX_MERGE_HISTORY_CACHE_ENTRIES) {
+    const oldestKey = mergeHistoryCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    mergeHistoryCache.delete(oldestKey);
+  }
+}
+
+export function getCachedPullRequest(repoFullName: string, prNumber: number): PullRequest | undefined {
+  return prDetailsCache.get(`${repoFullName}#${prNumber}`)?.pr;
+}
+
+export function getGitHubCacheStats(): {
+  prDetailsSize: number;
+  repoPrsSize: number;
+  mergeHistorySize: number;
+} {
+  return {
+    prDetailsSize: prDetailsCache.size,
+    repoPrsSize: repoPrsCache.size,
+    mergeHistorySize: mergeHistoryCache.size,
+  };
+}
 
 export async function mapConcurrent<T, R>(
   items: T[],
@@ -431,19 +492,24 @@ export async function getRepoPullRequests(
     );
 
     // Process PRs concurrently with a pool of 3 PRs at a time to prevent burst/secondary rate limits
+    const openPrNumbers = new Set<number>();
     const pullRequests: PullRequest[] = await mapConcurrent(
       validPrsData,
       3,
       async (rawPr: Record<string, unknown>) => {
       const prNumber = rawPr.number as number;
+      openPrNumbers.add(prNumber);
       const updatedAt = (rawPr.updated_at as string) || '';
-      const cacheKey = `${repoFullName}#${prNumber}@${updatedAt}`;
+      const prCacheKey = `${repoFullName}#${prNumber}`;
       const liveStatus = liveMergeStatusMap.get(prNumber);
 
       // If PR sub-resources are already cached for this exact updatedAt, reuse them!
       // But ALWAYS update live merge status because base branch (main) changes introduce conflicts without touching updatedAt!
-      if (!forceRefresh && prDetailsCache.has(cacheKey)) {
-        const cached = prDetailsCache.get(cacheKey)!;
+      const cachedEntry = !forceRefresh ? prDetailsCache.get(prCacheKey) : undefined;
+      if (cachedEntry && cachedEntry.updatedAt === updatedAt) {
+        // Refresh LRU position
+        setPrDetailsCacheEntry(prCacheKey, updatedAt, cachedEntry.pr);
+        const cached = cachedEntry.pr;
         if (liveStatus && liveStatus.mergeableState !== 'unknown') {
           cached.has_merge_conflicts = liveStatus.hasMergeConflicts;
           if (liveStatus.mergeableState) {
@@ -581,6 +647,14 @@ export async function getRepoPullRequests(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
 
+      // Bot filtering is complete — drop raw GitHub App metadata blobs to reduce
+      // server memory retention and API JSON payload size.
+      for (const comment of allComments) {
+        if ('performed_via_github_app' in comment) {
+          delete comment.performed_via_github_app;
+        }
+      }
+
       const lastComment = allComments.length > 0 ? allComments[allComments.length - 1] : undefined;
 
       let checksStatus: 'success' | 'failure' | 'pending' | 'unknown' = 'unknown';
@@ -637,12 +711,15 @@ export async function getRepoPullRequests(
       };
 
       if (mergeableState !== 'unknown' || (liveStatus && liveStatus.mergeableState !== 'unknown')) {
-        prDetailsCache.set(cacheKey, prObj);
+        setPrDetailsCacheEntry(prCacheKey, updatedAt, prObj);
       }
       return prObj;
     });
 
-    repoPrsCache.set(repoFullName, { prs: pullRequests, timestamp: Date.now() });
+    pruneClosedPrsFromCache(repoFullName, openPrNumbers);
+    const cacheTimestamp = Date.now();
+    sweepExpiredRepoCaches(cacheTimestamp);
+    repoPrsCache.set(repoFullName, { prs: pullRequests, timestamp: cacheTimestamp });
     return pullRequests;
   })();
 
@@ -875,7 +952,9 @@ export async function getRepoPRHistory(
     merged.sort((a, b) => new Date(b.merged_at || 0).getTime() - new Date(a.merged_at || 0).getTime());
     closed.sort((a, b) => new Date(b.closed_at || 0).getTime() - new Date(a.closed_at || 0).getTime());
 
-    mergeHistoryCache.set(repoFullName, { merged, closed, timestamp: Date.now() });
+    const historyTimestamp = Date.now();
+    sweepExpiredRepoCaches(historyTimestamp);
+    mergeHistoryCache.set(repoFullName, { merged, closed, timestamp: historyTimestamp });
     return { merged, closed };
   })();
 
@@ -971,6 +1050,7 @@ export async function postPRComment(
 
   const data = await res.json();
   repoPrsCache.delete(repoFullName);
+  prDetailsCache.delete(`${repoFullName}#${prNumber}`);
   return { success: true, commentUrl: data.html_url };
 }
 
@@ -1033,6 +1113,7 @@ export async function mergePullRequest(
 
   const data = await res.json();
   repoPrsCache.delete(repoFullName);
+  prDetailsCache.delete(`${repoFullName}#${prNumber}`);
   return {
     success: true,
     message: data.message || `PR #${prNumber} successfully merged`,
@@ -1152,6 +1233,7 @@ export async function undraftPullRequest(
   }
 
   repoPrsCache.delete(repoFullName);
+  prDetailsCache.delete(`${repoFullName}#${prNumber}`);
   return {
     success: true,
     message: `PR #${prNumber} successfully converted to open ready-for-review PR`,

@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { ActiveAgentInfo, EvaluatedGateResult, PRWithGates } from "@/types";
+import React, { useMemo, useState } from "react";
+import { ActiveAgentInfo, EvaluatedGateResult, LogicalGateRule, PRWithGates } from "@/types";
 import { GateIcon } from "@/components/ui/GateIcon";
 import { MarkdownRenderer } from "@/components/MarkdownRenderer";
 import { MergeConfirmModal } from "@/components/MergeConfirmModal";
@@ -26,7 +26,112 @@ import {
   FolderPlus,
   Copy,
   Check,
+  MessageSquare,
 } from "lucide-react";
+
+const DEFAULT_VISIBLE_COMMENTS = 2;
+
+const FALLBACK_ADDRESS_ISSUES_RULE: LogicalGateRule = {
+  id: "address-issues",
+  name: "Address Review Issues",
+  description: "PR owned by user with latest comment from someone else.",
+  enabled: true,
+  buttonLabel: "Address Issues",
+  buttonIcon: "Wrench",
+  buttonColor: "purple",
+  actionType: "spawn_agent",
+  conditions: {},
+  promptTemplate: `Address review issues for PR #{pr_number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
+};
+
+const FALLBACK_ADDRESS_LATEST_RULE: LogicalGateRule = {
+  id: "address-latest-comment",
+  name: "Address Recent Comment",
+  description:
+    "Address only the very recentmost comment/review on this PR instead of full history.",
+  enabled: true,
+  buttonLabel: "Address Latest",
+  buttonIcon: "Wrench",
+  buttonColor: "purple",
+  actionType: "spawn_agent",
+  conditions: {},
+  promptTemplate: `Address review feedback on PR #{pr_number} ({pr_title}) based ONLY on the recentmost comment by @{last_comment_author}:\n\n"{last_comment_body}"\n\nFocus specifically and solely on addressing the issues and feedback raised in this most recent comment, without getting distracted by previous conversation history. Check the issues raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to address the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a clear comment to the PR explaining what you did and why.`,
+};
+
+const FALLBACK_REVIEW_LATEST_RULE: LogicalGateRule = {
+  id: "review-latest-comment",
+  name: "Review Recent Comment",
+  description:
+    "Review PR considering only the author’s very recentmost comment/update instead of full history.",
+  enabled: true,
+  buttonLabel: "Review Latest",
+  buttonIcon: "Eye",
+  buttonColor: "emerald",
+  actionType: "spawn_agent",
+  conditions: {},
+  promptTemplate: `Review PR #{pr_number} ({pr_title}) against branch {base_branch}, focusing specifically on the author’s recentmost response by @{last_comment_author}:\n\n"{last_comment_body}"\n\nWe’re the reviewer. Instead of re-evaluating the full PR comment history, focus specifically on this latest update and comment. Has the author addressed the specific points raised in the review? Are the claimed fixes in place in the code, or are they pushing back? If they are pushing back, why? Are they doing so rightfully or not? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
+};
+
+const FALLBACK_REVIEW_LIGHT_RULE: LogicalGateRule = {
+  id: "review-light",
+  name: "Review Light",
+  description:
+    "Lightweight code review scanning only for critical merge blockers and verifying requirements before recommending approval.",
+  enabled: true,
+  buttonLabel: "Review Light",
+  buttonIcon: "Eye",
+  buttonColor: "emerald",
+  actionType: "spawn_agent",
+  conditions: {
+    prOwnedByNonCurrentUser: true,
+    notReviewedByOthers: true,
+  },
+  promptTemplate: `Perform a lightweight code review on PR #{pr_number} ({pr_title}) against branch {base_branch}.\n\n## Role & Review Focus\nYou are a senior software engineer conducting a fast, high-signal, lightweight code review.\nDo NOT focus on minor nitpicks, stylistic nuances, code formatting, or trivial suggestions.\n\nYour review has two strict goals:\n1. **Critical Merge Blockers**: Scan specifically and solely for absolutely critical merge blockers. This includes:\n   - Fatal bugs, logic errors, or crashes/unhandled exceptions\n   - Severe security vulnerabilities or sensitive data exposure\n   - Data corruption, data loss, or broken database integrity\n   - Breaking changes or critical regressions that prevent merging\n2. **Requirements Verification**: Check whether the PR requirements and core intentions have been addressed by the author.\n\n## Decision & Publish Review Comment\nWhen your review is complete, publish your review on PR #{pr_number}:\n- **If any critical merge blockers are found**: Submit a "REQUEST_CHANGES" review comment detailing each critical blocker, specific line references, and the necessary fix before this can be merged.\n- **If NO critical merge blockers are found AND the requirements have been addressed by the author**: Recommend approval by submitting an "APPROVE" review comment confirming that the core requirements are met and there are no critical blockers.`,
+};
+
+const FALLBACK_SOLVE_CONFLICTS_RULE: LogicalGateRule = {
+  id: "rebase-user-pr",
+  name: "Solve Conflicts",
+  description: "Pull request that has merge conflicts.",
+  enabled: true,
+  buttonLabel: "Solve conflicts",
+  buttonIcon: "GitBranch",
+  buttonColor: "amber",
+  actionType: "spawn_agent",
+  conditions: { hasMergeConflicts: true },
+  promptTemplate: `Solve conflicts against {base_branch} for PR #{pr_number} ({pr_title}) in repository {repo_name} on branch '{branch}'.\n\nFetch origin and merge origin/{base_branch} into '{branch}'. Solve conflicts and any issues the best way you can. Don't look at only git-identified conflicts, but also at structural intention. Take a step back and assess the codebase as a whole. Does anything break with the merge? Are any intentions, from either side, lost? Verify clean test execution.\n\nOnly resort to rebasing (git rebase origin/{base_branch}) if merging does not work or if nothing else works.\n\nOnce you’re done, push the changes to the branch (only force push if you had to resort to rebasing) and post a comment on the PR explaining how conflicts were resolved.`,
+};
+
+const GATE_BUTTON_TONES: Record<string, string> = {
+  purple: "gate-button gate-button--purple",
+  rose: "gate-button gate-button--rose",
+  emerald: "gate-button gate-button--emerald",
+  amber: "gate-button gate-button--amber",
+  indigo: "gate-button gate-button--indigo",
+  blue: "gate-button gate-button--blue",
+};
+
+function getGateButtonStyles(color?: string): string {
+  return GATE_BUTTON_TONES[color || "blue"] || GATE_BUTTON_TONES.blue;
+}
+
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return "just now";
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours}hrs ago`;
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 30) return `${diffInDays}d ago`;
+  const diffInMonths = Math.floor(diffInDays / 30);
+  if (diffInMonths < 12) return `${diffInMonths}mo ago`;
+  const diffInYears = Math.floor(diffInMonths / 12);
+  return `${diffInYears}y ago`;
+}
 
 interface PRCardProps {
   prWithGates: PRWithGates;
@@ -44,7 +149,7 @@ interface PRCardProps {
   onClearActiveAgent?: (cardId: string) => void;
 }
 
-export const PRCard: React.FC<PRCardProps> = ({
+export const PRCard: React.FC<PRCardProps> = React.memo(function PRCard({
   prWithGates,
   onTriggerGate,
   onMergePR,
@@ -55,161 +160,102 @@ export const PRCard: React.FC<PRCardProps> = ({
   isInProcess,
   activeAgentInfo,
   onClearActiveAgent,
-}) => {
+}) {
   const { pr, evaluatedGates } = prWithGates;
-  const needsAttention = isPrAwaitingComment(pr, currentUser || null);
   const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
   const elementId = customId || cardId;
-  const passedGates = evaluatedGates.filter((g) => g.passed);
 
-  const addressIssuesGate = evaluatedGates.find(
-    (g) => g.rule.id === "address-issues",
-  ) || {
-    rule: {
-      id: "address-issues",
-      name: "Address Review Issues",
-      description: "PR owned by user with latest comment from someone else.",
-      enabled: true,
-      buttonLabel: "Address Issues",
-      buttonIcon: "Wrench",
-      buttonColor: "purple",
-      actionType: "spawn_agent",
-      conditions: {},
-      promptTemplate: `Address review issues for PR #{pr_number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
-    },
-    passed: false,
-    generatedPrompt: `Address review issues for PR #${pr.number} \n\nLook at the complete comment history on the pr that exists on this branch. Read it all, and then adress the reviewers recentmost feedback with the whole context of the PR in mind. Check the issues the reviewer has raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to adress the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a very detailed comment to the pr explaining what you did and why. `,
-    targetAgent: "codex",
-  };
-  const hasPassedAddressIssues = passedGates.some(
-    (g) => g.rule.id === "address-issues",
-  );
+  const { displayComments, effectiveLastComment, needsAttention } = useMemo(() => {
+    const filtered = filterNonBotComments(pr.comments || []);
+    const last = getEffectiveLastComment(filtered, pr.last_comment);
+    const awaiting =
+      typeof prWithGates.needsAttention === "boolean"
+        ? prWithGates.needsAttention
+        : isPrAwaitingComment(pr, currentUser || null, filtered, last);
+    return {
+      displayComments: filtered,
+      effectiveLastComment: last,
+      needsAttention: awaiting,
+    };
+  }, [pr, prWithGates.needsAttention, currentUser]);
 
-  const displayComments = filterNonBotComments(pr.comments || []);
-  const effectiveLastComment = getEffectiveLastComment(pr.comments, pr.last_comment);
+  const {
+    passedGates,
+    addressIssuesGate,
+    hasPassedAddressIssues,
+    addressLatestGate,
+    hasPassedAddressLatest,
+    reviewWithContextGate,
+    hasPassedReviewWithContext,
+    reviewLatestGate,
+    hasPassedReviewLatest,
+    openCodeReviewGate,
+    hasPassedOpenCodeReview,
+    reviewLightGate,
+    hasPassedReviewLight,
+    solveConflictsGate,
+    hasPassedSolveConflicts,
+    hasAuthorSolveConflicts,
+  } = useMemo(() => {
+    const passed = evaluatedGates.filter((g) => g.passed);
+    const passedIds = new Set(passed.map((g) => g.rule.id));
+    const byId = new Map(evaluatedGates.map((g) => [g.rule.id, g]));
+
+    const fallbackGate = (rule: LogicalGateRule): EvaluatedGateResult => ({
+      rule,
+      passed: false,
+      generatedPrompt: "",
+      targetAgent: "codex",
+    });
+
+    return {
+      passedGates: passed,
+      addressIssuesGate:
+        byId.get("address-issues") || fallbackGate(FALLBACK_ADDRESS_ISSUES_RULE),
+      hasPassedAddressIssues: passedIds.has("address-issues"),
+      addressLatestGate:
+        byId.get("address-latest-comment") ||
+        fallbackGate(FALLBACK_ADDRESS_LATEST_RULE),
+      hasPassedAddressLatest: passedIds.has("address-latest-comment"),
+      reviewWithContextGate: byId.get("review-with-context"),
+      hasPassedReviewWithContext: passedIds.has("review-with-context"),
+      reviewLatestGate:
+        byId.get("review-latest-comment") ||
+        fallbackGate(FALLBACK_REVIEW_LATEST_RULE),
+      hasPassedReviewLatest: passedIds.has("review-latest-comment"),
+      openCodeReviewGate: byId.get("opencode-review"),
+      hasPassedOpenCodeReview: passedIds.has("opencode-review"),
+      reviewLightGate:
+        byId.get("review-light") || fallbackGate(FALLBACK_REVIEW_LIGHT_RULE),
+      hasPassedReviewLight: passedIds.has("review-light"),
+      solveConflictsGate:
+        byId.get("rebase-user-pr") || fallbackGate(FALLBACK_SOLVE_CONFLICTS_RULE),
+      hasPassedSolveConflicts: passedIds.has("rebase-user-pr"),
+      hasAuthorSolveConflicts: passedIds.has("rebase-non-user-pr"),
+    };
+  }, [evaluatedGates]);
+
   const hasComments = Boolean(
     displayComments.length > 0 || effectiveLastComment,
-  );
-
-  const addressLatestGate = evaluatedGates.find(
-    (g) => g.rule.id === "address-latest-comment",
-  ) || {
-    rule: {
-      id: "address-latest-comment",
-      name: "Address Recent Comment",
-      description:
-        "Address only the very recentmost comment/review on this PR instead of full history.",
-      enabled: true,
-      buttonLabel: "Address Latest",
-      buttonIcon: "Wrench",
-      buttonColor: "purple",
-      actionType: "spawn_agent",
-      conditions: {},
-      promptTemplate: `Address review feedback on PR #{pr_number} ({pr_title}) based ONLY on the recentmost comment by @{last_comment_author}:\n\n"{last_comment_body}"\n\nFocus specifically and solely on addressing the issues and feedback raised in this most recent comment, without getting distracted by previous conversation history. Check the issues raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to address the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a clear comment to the PR explaining what you did and why.`,
-    },
-    passed: false,
-    generatedPrompt: `Address review feedback on PR #${pr.number} (${pr.title}) based ONLY on the recentmost comment by @${effectiveLastComment?.user.login || "reviewer"}:\n\n"${effectiveLastComment?.body || "No recent comment"}"\n\nFocus specifically and solely on addressing the issues and feedback raised in this most recent comment, without getting distracted by previous conversation history. Check the issues raised against the code. Fix the issues if they're real- but don’t trust the reviewer blindly. Check if the issues exist in the code. If they do NOT, or if it’s a design decision- Don’t be afraid to push back. If you DO decide to address the issues, do it very thoroughly and with great effort and detail. Before you start implementing, think of the best fix really hard. Is it the optimal way to do it? Once you’re done, push the changes to the branch and post a clear comment to the PR explaining what you did and why.`,
-    targetAgent: "codex",
-  };
-  const hasPassedAddressLatest = passedGates.some(
-    (g) => g.rule.id === "address-latest-comment",
-  );
-
-  const reviewWithContextGate = evaluatedGates.find(
-    (g) => g.rule.id === "review-with-context",
-  );
-  const hasPassedReviewWithContext = passedGates.some(
-    (g) => g.rule.id === "review-with-context",
-  );
-
-  const reviewLatestGate = evaluatedGates.find(
-    (g) => g.rule.id === "review-latest-comment",
-  ) || {
-    rule: {
-      id: "review-latest-comment",
-      name: "Review Recent Comment",
-      description:
-        "Review PR considering only the author’s very recentmost comment/update instead of full history.",
-      enabled: true,
-      buttonLabel: "Review Latest",
-      buttonIcon: "Eye",
-      buttonColor: "emerald",
-      actionType: "spawn_agent",
-      conditions: {},
-      promptTemplate: `Review PR #{pr_number} ({pr_title}) against branch {base_branch}, focusing specifically on the author’s recentmost response by @{last_comment_author}:\n\n"{last_comment_body}"\n\nWe’re the reviewer. Instead of re-evaluating the full PR comment history, focus specifically on this latest update and comment. Has the author addressed the specific points raised in the review? Are the claimed fixes in place in the code, or are they pushing back? If they are pushing back, why? Are they doing so rightfully or not? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
-    },
-    passed: false,
-    generatedPrompt: `Review PR #${pr.number} (${pr.title}) against branch ${pr.base.ref}, focusing specifically on the author’s recentmost response by @${effectiveLastComment?.user.login || "author"}:\n\n"${effectiveLastComment?.body || "No recent comment"}"\n\nWe’re the reviewer. Instead of re-evaluating the full PR comment history, focus specifically on this latest update and comment. Has the author addressed the specific points raised in the review? Are the claimed fixes in place in the code, or are they pushing back? If they are pushing back, why? Are they doing so rightfully or not? Conduct a focused code review on this update and publish a "changes requested" or "approve" review comment on the PR with clear, constructive feedback.`,
-    targetAgent: "codex",
-  };
-  const hasPassedReviewLatest = passedGates.some(
-    (g) => g.rule.id === "review-latest-comment",
-  );
-
-  const openCodeReviewGate = evaluatedGates.find(
-    (g) => g.rule.id === "opencode-review",
-  );
-  const hasPassedOpenCodeReview = passedGates.some(
-    (g) => g.rule.id === "opencode-review",
-  );
-
-  const reviewLightGate = evaluatedGates.find(
-    (g) => g.rule.id === "review-light",
-  ) || {
-    rule: {
-      id: "review-light",
-      name: "Review Light",
-      description:
-        "Lightweight code review scanning only for critical merge blockers and verifying requirements before recommending approval.",
-      enabled: true,
-      buttonLabel: "Review Light",
-      buttonIcon: "Eye",
-      buttonColor: "emerald",
-      actionType: "spawn_agent",
-      conditions: {
-        prOwnedByNonCurrentUser: true,
-        notReviewedByOthers: true,
-      },
-      promptTemplate: `Perform a lightweight code review on PR #{pr_number} ({pr_title}) against branch {base_branch}.\n\n## Role & Review Focus\nYou are a senior software engineer conducting a fast, high-signal, lightweight code review.\nDo NOT focus on minor nitpicks, stylistic nuances, code formatting, or trivial suggestions.\n\nYour review has two strict goals:\n1. **Critical Merge Blockers**: Scan specifically and solely for absolutely critical merge blockers. This includes:\n   - Fatal bugs, logic errors, or crashes/unhandled exceptions\n   - Severe security vulnerabilities or sensitive data exposure\n   - Data corruption, data loss, or broken database integrity\n   - Breaking changes or critical regressions that prevent merging\n2. **Requirements Verification**: Check whether the PR requirements and core intentions have been addressed by the author.\n\n## Decision & Publish Review Comment\nWhen your review is complete, publish your review on PR #{pr_number}:\n- **If any critical merge blockers are found**: Submit a "REQUEST_CHANGES" review comment detailing each critical blocker, specific line references, and the necessary fix before this can be merged.\n- **If NO critical merge blockers are found AND the requirements have been addressed by the author**: Recommend approval by submitting an "APPROVE" review comment confirming that the core requirements are met and there are no critical blockers.`,
-    },
-    passed: false,
-    generatedPrompt: `Perform a lightweight code review on PR #${pr.number} (${pr.title}) against branch ${pr.base.ref}.\n\n## Role & Review Focus\nYou are a senior software engineer conducting a fast, high-signal, lightweight code review.\nDo NOT focus on minor nitpicks, stylistic nuances, code formatting, or trivial suggestions.\n\nYour review has two strict goals:\n1. **Critical Merge Blockers**: Scan specifically and solely for absolutely critical merge blockers. This includes:\n   - Fatal bugs, logic errors, or crashes/unhandled exceptions\n   - Severe security vulnerabilities or sensitive data exposure\n   - Data corruption, data loss, or broken database integrity\n   - Breaking changes or critical regressions that prevent merging\n2. **Requirements Verification**: Check whether the PR requirements and core intentions have been addressed by the author.\n\n## Decision & Publish Review Comment\nWhen your review is complete, publish your review on PR #${pr.number}:\n- **If any critical merge blockers are found**: Submit a "REQUEST_CHANGES" review comment detailing each critical blocker, specific line references, and the necessary fix before this can be merged.\n- **If NO critical merge blockers are found AND the requirements have been addressed by the author**: Recommend approval by submitting an "APPROVE" review comment confirming that the core requirements are met and there are no critical blockers.`,
-    targetAgent: "codex",
-  };
-  const hasPassedReviewLight = passedGates.some(
-    (g) => g.rule.id === "review-light",
-  );
-
-  const solveConflictsGate = evaluatedGates.find(
-    (g) => g.rule.id === "rebase-user-pr",
-  ) || {
-    rule: {
-      id: "rebase-user-pr",
-      name: "Solve Conflicts",
-      description: "Pull request that has merge conflicts.",
-      enabled: true,
-      buttonLabel: "Solve conflicts",
-      buttonIcon: "GitBranch",
-      buttonColor: "amber",
-      actionType: "spawn_agent",
-      conditions: { hasMergeConflicts: true },
-      promptTemplate: `Solve conflicts against {base_branch} for PR #{pr_number} ({pr_title}) in repository {repo_name} on branch '{branch}'.\n\nFetch origin and merge origin/{base_branch} into '{branch}'. Solve conflicts and any issues the best way you can. Don't look at only git-identified conflicts, but also at structural intention. Take a step back and assess the codebase as a whole. Does anything break with the merge? Are any intentions, from either side, lost? Verify clean test execution.\n\nOnly resort to rebasing (git rebase origin/{base_branch}) if merging does not work or if nothing else works.\n\nOnce you’re done, push the changes to the branch (only force push if you had to resort to rebasing) and post a comment on the PR explaining how conflicts were resolved.`,
-    },
-    passed: false,
-    generatedPrompt: `Solve conflicts against ${pr.base.ref} for PR #${pr.number} (${pr.title}) in repository ${pr.repo_full_name} on branch '${pr.head.ref}'.\n\nFetch origin and merge origin/${pr.base.ref} into '${pr.head.ref}'. Solve conflicts and any issues the best way you can. Don't look at only git-identified conflicts, but also at structural intention. Take a step back and assess the codebase as a whole. Does anything break with the merge? Are any intentions, from either side, lost? Verify clean test execution.\n\nOnly resort to rebasing (git rebase origin/${pr.base.ref}) if merging does not work or if nothing else works.\n\nOnce you’re done, push the changes to the branch (only force push if you had to resort to rebasing) and post a comment on the PR explaining how conflicts were resolved.`,
-    targetAgent: "codex",
-  };
-  const hasPassedSolveConflicts = passedGates.some(
-    (g) => g.rule.id === "rebase-user-pr",
-  );
-  const hasAuthorSolveConflicts = passedGates.some(
-    (g) => g.rule.id === "rebase-non-user-pr",
   );
   const isOwner = currentUser
     ? pr.user.login.toLowerCase() === currentUser.toLowerCase()
     : evaluatedGates.some(
       (g) => g.rule.conditions?.prOwnedByCurrentUser && g.passed,
     );
+
+  const [showAllComments, setShowAllComments] = useState(false);
+  const hiddenCommentCount = Math.max(
+    0,
+    displayComments.length - DEFAULT_VISIBLE_COMMENTS,
+  );
+  const visibleComments = useMemo(
+    () =>
+      showAllComments || hiddenCommentCount === 0
+        ? displayComments
+        : displayComments.slice(-DEFAULT_VISIBLE_COMMENTS),
+    [displayComments, hiddenCommentCount, showAllComments],
+  );
 
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
@@ -303,36 +349,6 @@ export const PRCard: React.FC<PRCardProps> = ({
     } finally {
       setIsMerging(false);
     }
-  };
-
-  const getGateButtonStyles = (color?: string) => {
-    const tones: Record<string, string> = {
-      purple: "gate-button gate-button--purple",
-      rose: "gate-button gate-button--rose",
-      emerald: "gate-button gate-button--emerald",
-      amber: "gate-button gate-button--amber",
-      indigo: "gate-button gate-button--indigo",
-      blue: "gate-button gate-button--blue",
-    };
-    return tones[color || "blue"] || tones.blue;
-  };
-
-  const formatRelativeTime = (dateString: string): string => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    if (diffInSeconds < 60) return "just now";
-    const diffInMinutes = Math.floor(diffInSeconds / 60);
-    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-    const diffInHours = Math.floor(diffInMinutes / 60);
-    if (diffInHours < 24) return `${diffInHours}hrs ago`;
-    const diffInDays = Math.floor(diffInHours / 24);
-    if (diffInDays < 30) return `${diffInDays}d ago`;
-    const diffInMonths = Math.floor(diffInDays / 30);
-    if (diffInMonths < 12) return `${diffInMonths}mo ago`;
-    const diffInYears = Math.floor(diffInMonths / 12);
-    return `${diffInYears}y ago`;
   };
 
   return (
@@ -555,7 +571,20 @@ export const PRCard: React.FC<PRCardProps> = ({
           </div>
         ) : (
           <div className="comment-thread" id={`${elementId}-comment-thread`}>
-            {displayComments.map((comment) => {
+            {hiddenCommentCount > 0 && (
+              <button
+                type="button"
+                className="comment-collapse-toggle"
+                onClick={() => setShowAllComments((prev) => !prev)}
+                aria-expanded={showAllComments}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                {showAllComments
+                  ? `Hide ${hiddenCommentCount} earlier ${hiddenCommentCount === 1 ? "comment" : "comments"}`
+                  : `Show ${hiddenCommentCount} earlier ${hiddenCommentCount === 1 ? "comment" : "comments"}`}
+              </button>
+            )}
+            {visibleComments.map((comment) => {
               const rebaseStatus = checkRebaseStatus(comment, pr.commits);
 
               return (
@@ -983,14 +1012,16 @@ export const PRCard: React.FC<PRCardProps> = ({
       </div>
 
       {/* Custom Centered PR Merge Confirmation Modal */}
-      <MergeConfirmModal
-        isOpen={isMergeModalOpen}
-        onClose={() => !isMerging && setIsMergeModalOpen(false)}
-        pr={pr}
-        onConfirm={handleConfirmMerge}
-        isMerging={isMerging}
-        error={mergeError}
-      />
+      {isMergeModalOpen && (
+        <MergeConfirmModal
+          isOpen={isMergeModalOpen}
+          onClose={() => !isMerging && setIsMergeModalOpen(false)}
+          pr={pr}
+          onConfirm={handleConfirmMerge}
+          isMerging={isMerging}
+          error={mergeError}
+        />
+      )}
     </div>
   );
-};
+});

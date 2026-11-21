@@ -100,6 +100,19 @@ let desktopApps = [
 ]
 
 func adHocSign(_ appPath: String) {
+    // Remove any existing Finder Icon\r file before signing so it is not sealed
+    // with stale hashes before NSWorkspace.setIcon writes the fresh custom icon.
+    let iconCrPath = "\(appPath)/Icon\r"
+    if fileManager.fileExists(atPath: iconCrPath) {
+        try? fileManager.removeItem(atPath: iconCrPath)
+    }
+
+    let strip = Process()
+    strip.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+    strip.arguments = ["-cr", appPath]
+    try? strip.run()
+    strip.waitUntilExit()
+
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
     process.arguments = ["--force", "--deep", "--sign", "-", appPath]

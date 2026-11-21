@@ -133,6 +133,12 @@ export interface EvaluatedGateResult {
   targetAgent: AgentType;
 }
 
+export interface CompactEvaluatedGate {
+  ruleId: string;
+  passed: boolean;
+  targetAgent: AgentType;
+}
+
 export interface PRWithGates {
   pr: PullRequest;
   evaluatedGates: EvaluatedGateResult[];

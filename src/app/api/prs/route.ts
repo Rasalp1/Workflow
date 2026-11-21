@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { fetchAuthenticatedUser, getRepoPullRequests, getRateLimitStatus, GitHubRateLimitError } from '@/lib/github';
-import { evaluateGateRule, isPrAwaitingComment } from '@/lib/logicGates';
+import { evaluateGatesForPR } from '@/lib/logicGates';
 import { loadConfig, loadRules } from '@/lib/storage';
 import { loadActiveAgents, reconcileActiveAgents } from '@/lib/activeAgents';
-import { PRWithGates } from '@/types';
+import { CompactEvaluatedGate, PRWithGates } from '@/types';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -27,6 +27,8 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const force = searchParams.get('force') === 'true';
+    const view = searchParams.get('view');
+    const isSummaryView = view === 'summary';
 
     // Check rate limit upfront
     const rateStatus = getRateLimitStatus();
@@ -80,11 +82,16 @@ export async function GET(request: Request) {
             pr.local_path = mappedPath;
           }
 
-          const evaluatedGates = rules.map((rule) =>
-            evaluateGateRule(rule, pr, currentUser, config.defaultAgent)
+          // Prompts are rendered lazily when a user triggers an action instead of
+          // pre-rendering every (PR x rule) template on every poll.
+          const { evaluatedGates, needsAttention } = evaluateGatesForPR(
+            rules,
+            pr,
+            currentUser,
+            config.defaultAgent,
+            { includePrompt: false }
           );
 
-          const needsAttention = isPrAwaitingComment(pr, currentUser);
           pr.needs_attention = needsAttention;
 
           allPRsWithGates.push({
@@ -140,11 +147,79 @@ export async function GET(request: Request) {
       console.error('Failed to reconcile active agent sessions:', agentErr);
     }
 
+    // Lightweight payload for the macOS menu bar app (omits bodies, comments,
+    // commits, and prompt templates — reducing ~2.8 MB to ~20 KB per poll).
+    if (isSummaryView) {
+      const summaryPRsWithGates = allPRsWithGates.map(({ pr, evaluatedGates, needsAttention }) => ({
+        pr: {
+          id: pr.id,
+          number: pr.number,
+          title: pr.title,
+          html_url: pr.html_url,
+          state: pr.state,
+          is_draft: pr.is_draft,
+          head: { ref: pr.head.ref },
+          base: { ref: pr.base.ref },
+          user: { login: pr.user.login },
+          repo_name: pr.repo_name,
+          repo_full_name: pr.repo_full_name,
+          comments_count: pr.comments_count,
+          has_merge_conflicts: pr.has_merge_conflicts,
+          needs_attention: pr.needs_attention,
+          local_path: pr.local_path,
+        },
+        evaluatedGates: evaluatedGates.map((gate) => ({
+          rule: {
+            id: gate.rule.id,
+            name: gate.rule.name,
+            buttonLabel: gate.rule.buttonLabel,
+            buttonIcon: gate.rule.buttonIcon,
+            buttonColor: gate.rule.buttonColor,
+            actionType: gate.rule.actionType,
+          },
+          passed: gate.passed,
+          targetAgent: gate.targetAgent,
+        })),
+        needsAttention,
+      }));
+
+      return NextResponse.json(
+        {
+          success: true,
+          currentUser,
+          prsWithGates: summaryPRsWithGates,
+          activeAgents,
+          monitoredRepos: config.monitoredRepos,
+          awaitingCommentCount,
+          theirsToHandleCount,
+          warning: errors.length > 0 ? errors.join('; ') : undefined,
+        },
+        {
+          headers: {
+            'Cache-Control': 'no-store, max-age=0, must-revalidate',
+          },
+        }
+      );
+    }
+
+    // Dashboard payload: ship `rules` once at the top level and send compact gate
+    // references per PR so the client reuses shared rule objects in memory.
+    const compactPRsWithGates = allPRsWithGates.map(({ pr, evaluatedGates, needsAttention }) => ({
+      pr,
+      evaluatedGates: evaluatedGates.map<CompactEvaluatedGate>((gate) => ({
+        ruleId: gate.rule.id,
+        passed: gate.passed,
+        targetAgent: gate.targetAgent,
+      })),
+      needsAttention,
+    }));
+
     return NextResponse.json(
       {
         success: true,
         currentUser,
-        prsWithGates: allPRsWithGates,
+        rules,
+        prsWithGates: compactPRsWithGates,
         activeAgents,
         monitoredRepos: config.monitoredRepos,
         awaitingCommentCount,

@@ -381,6 +381,26 @@
   margin-left: 8px;
   padding-left: 16px;
 }
+.comment-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.comment-collapse-toggle:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
 .discussion-comment {
   padding: 16px 0;
   min-width: 0;
@@ -645,6 +665,8 @@
   scroll-margin-top: 0;
   box-shadow: 0 2px 5px #24304b03;
   overflow-wrap: anywhere;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 420px;
 }
 .pr-detail.is-selected {
   border-color: #bccfee;

@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server';
-import { postPRComment } from '@/lib/github';
-import { loadConfig } from '@/lib/storage';
+import { getCachedPullRequest, getRepoPullRequests, postPRComment } from '@/lib/github';
+import { loadConfig, loadRules } from '@/lib/storage';
 import { validateConfiguredRepo, validateOrigin, validatePullRequestNumber } from '@/lib/security';
+import { formatPromptTemplate } from '@/lib/logicGates';
 
 export async function POST(request: Request) {
   try {
     validateOrigin(request);
     const body = await request.json();
-    const { repoFullName, prNumber, commentBody } = body;
+    const { repoFullName, prNumber, commentBody, ruleId } = body;
 
-    if (!repoFullName || !prNumber || typeof commentBody !== 'string' || !commentBody.trim() || commentBody.length > 20_000) {
+    if (!repoFullName || !prNumber) {
       return NextResponse.json(
         { error: 'repoFullName, prNumber, and commentBody are required' },
         { status: 400 }
@@ -27,7 +28,30 @@ export async function POST(request: Request) {
     }
     const token = config.githubToken || process.env.GITHUB_TOKEN;
 
-    const result = await postPRComment(configuredRepo, number, commentBody, token);
+    let resolvedBody: string = typeof commentBody === 'string' ? commentBody : '';
+    if (!resolvedBody.trim() && typeof ruleId === 'string' && ruleId.trim()) {
+      const rules = await loadRules();
+      const matchedRule = rules.find((r) => r.id === ruleId);
+      if (matchedRule) {
+        let pr = getCachedPullRequest(configuredRepo, number);
+        if (!pr && token) {
+          const prs = await getRepoPullRequests(configuredRepo, token, false).catch(() => []);
+          pr = prs.find((item) => item.number === number);
+        }
+        if (pr) {
+          resolvedBody = formatPromptTemplate(matchedRule.promptTemplate, pr);
+        }
+      }
+    }
+
+    if (!resolvedBody.trim() || resolvedBody.length > 20_000) {
+      return NextResponse.json(
+        { error: 'repoFullName, prNumber, and commentBody are required' },
+        { status: 400 }
+      );
+    }
+
+    const result = await postPRComment(configuredRepo, number, resolvedBody, token);
 
     return NextResponse.json({
       success: true,

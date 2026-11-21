@@ -657,7 +657,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !isFetching else { return }
         isFetching = true
         
-        let endpoint = force ? "http://localhost:\(port)/api/prs?force=true" : "http://localhost:\(port)/api/prs"
+        let endpoint = force
+            ? "http://localhost:\(port)/api/prs?view=summary&force=true"
+            : "http://localhost:\(port)/api/prs?view=summary"
         guard let url = URL(string: endpoint) else {
             isFetching = false
             return
@@ -1107,32 +1109,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if actionType == "spawn_agent" {
             guard let url = URL(string: "http://localhost:\(port)/api/agent/spawn") else { return }
             
-            let prompt: String
-            if let p = gate.generatedPrompt, !p.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                prompt = p
-            } else {
-                let baseBranch = pr.base?.ref ?? "main"
-                let cleanTitle = pr.title.replacingOccurrences(of: "\n", with: " ")
-                let ruleId = gate.rule?.id ?? ""
-                if ruleId == "review-light" {
-                    prompt = "Perform a lightweight code review on PR #\(pr.number) (\(cleanTitle)) against base branch \(baseBranch). Scan only for critical merge blockers and verify that the author addressed the requirements. If no critical blockers are found and requirements are met, recommend an approval comment; otherwise request changes."
-                } else if ruleId.contains("review") {
-                    prompt = "Perform extensive and deep code review on this branch against base branch \(baseBranch) for PR #\(pr.number) (\(cleanTitle)). Analyze security, performance, code quality, architecture, and testing. Provide constructive, actionable feedback. Post your review findings as a comment on PR #\(pr.number). Use the correct review comment type: request changes if needed or approve otherwise."
-                } else {
-                    prompt = "Address review issues for PR #\(pr.number) (\(cleanTitle)). Look at the complete comment history on the PR, investigate the feedback, make the necessary changes, verify with tests, and push the branch."
-                }
-            }
-            
-            let payload: [String: Any] = [
+            let ruleId = gate.rule?.id ?? ""
+            var payload: [String: Any] = [
                 "repoFullName": repoFullName,
                 "localPath": pr.local_path ?? "",
                 "branchName": pr.head?.ref ?? "",
+                "baseBranch": pr.base?.ref ?? "",
                 "agent": agent,
-                "prompt": prompt,
                 "prNumber": pr.number,
                 "cardId": agentCardId(for: pr),
                 "source": "menubar"
             ]
+            if !ruleId.isEmpty {
+                payload["ruleId"] = ruleId
+            }
+            if let p = gate.generatedPrompt, !p.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                payload["prompt"] = p
+            } else if ruleId.isEmpty {
+                let baseBranch = pr.base?.ref ?? "main"
+                let cleanTitle = pr.title.replacingOccurrences(of: "\n", with: " ")
+                payload["prompt"] = "Address review issues for PR #\(pr.number) (\(cleanTitle)) against base branch \(baseBranch). Look at the complete comment history on the PR, investigate the feedback, make the necessary changes, verify with tests, and push the branch."
+            }
             
             guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
             
@@ -1217,11 +1214,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             
         } else if actionType == "post_comment" {
             guard let url = URL(string: "http://localhost:\(port)/api/prs/comment") else { return }
-            let payload: [String: Any] = [
+            let ruleId = gate.rule?.id ?? ""
+            var payload: [String: Any] = [
                 "repoFullName": repoFullName,
-                "prNumber": pr.number,
-                "commentBody": gate.generatedPrompt ?? "Please update PR #\(pr.number)"
+                "prNumber": pr.number
             ]
+            if !ruleId.isEmpty {
+                payload["ruleId"] = ruleId
+            }
+            if let prompt = gate.generatedPrompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                payload["commentBody"] = prompt
+            } else if ruleId.isEmpty {
+                payload["commentBody"] = "Please update PR #\(pr.number)"
+            }
             guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return }
             var request = URLRequest(url: url)
             request.httpMethod = "POST"

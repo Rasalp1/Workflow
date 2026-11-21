@@ -8,6 +8,7 @@
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build --webpack",
     "start": "next start --hostname 127.0.0.1",
+    "start:prod": "bash scripts/run-server.sh",
     "lint": "eslint",
     "test": "node --test --experimental-strip-types src/lib/__tests__/*.test.ts",
     "test:e2e": "playwright test",

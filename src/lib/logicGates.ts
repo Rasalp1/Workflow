@@ -1,11 +1,19 @@
-import type { AgentType, EvaluatedGateResult, LogicalGateRule, PullRequest } from '../types/index.ts';
+import type { AgentType, EvaluatedGateResult, LogicalGateRule, PRComment, PullRequest } from '../types/index.ts';
 import { filterNonBotComments, getEffectiveLastComment } from './botDetection.ts';
+
+export interface GateEvaluationOptions {
+  includePrompt?: boolean;
+  prefilteredComments?: PRComment[];
+  prefilteredLastComment?: PRComment;
+  hasTwoConsecutiveOthers?: boolean;
+}
 
 export function evaluateGateRule(
   rule: LogicalGateRule,
   pr: PullRequest,
   currentUserLogin: string | null,
-  defaultAgent: AgentType
+  defaultAgent: AgentType,
+  options: GateEvaluationOptions = {}
 ): EvaluatedGateResult {
   if (!rule.enabled) {
     return {
@@ -19,8 +27,11 @@ export function evaluateGateRule(
   let passed = true;
 
   const effectiveUser = currentUserLogin ? currentUserLogin.toLowerCase() : null;
-  const effectiveComments = filterNonBotComments(pr.comments || []);
-  const effectiveLastComment = getEffectiveLastComment(pr.comments, pr.last_comment);
+  const effectiveComments = options.prefilteredComments ?? filterNonBotComments(pr.comments || []);
+  const effectiveLastComment =
+    'prefilteredLastComment' in options
+      ? options.prefilteredLastComment
+      : getEffectiveLastComment(effectiveComments, pr.last_comment);
 
   // Condition: prOwnedByCurrentUser (PR owned by user)
   if (rule.conditions.prOwnedByCurrentUser) {
@@ -126,12 +137,21 @@ export function evaluateGateRule(
 
   // Condition: notReviewedByOthers (Exclude PRs where 2 other distinct users commented in a row)
   if (rule.conditions.notReviewedByOthers) {
-    if (hasTwoConsecutiveCommentsByOthers(pr, currentUserLogin)) {
+    const reviewedByOthers =
+      options.hasTwoConsecutiveOthers ??
+      hasTwoConsecutiveCommentsByOthers(pr, currentUserLogin, effectiveComments, effectiveLastComment);
+    if (reviewedByOthers) {
       passed = false;
     }
   }
 
-  const generatedPrompt = formatPromptTemplate(rule.promptTemplate, pr);
+  const includePrompt = options.includePrompt ?? true;
+  const generatedPrompt = includePrompt
+    ? formatPromptTemplate(rule.promptTemplate, pr, {
+        prefilteredComments: effectiveComments,
+        prefilteredLastComment: effectiveLastComment,
+      })
+    : '';
 
   return {
     rule,
@@ -141,20 +161,77 @@ export function evaluateGateRule(
   };
 }
 
-export function formatPromptTemplate(template: string, pr: PullRequest): string {
-  const effectiveLastComment = getEffectiveLastComment(pr.comments, pr.last_comment);
+/**
+ * Evaluates all gate rules for a PR while filtering bot comments and computing
+ * multi-reviewer heuristics at most once per PR instead of once per rule.
+ */
+export function evaluateGatesForPR(
+  rules: LogicalGateRule[],
+  pr: PullRequest,
+  currentUserLogin: string | null,
+  defaultAgent: AgentType,
+  options: { includePrompt?: boolean } = {}
+): {
+  evaluatedGates: EvaluatedGateResult[];
+  needsAttention: boolean;
+} {
   const effectiveComments = filterNonBotComments(pr.comments || []);
+  const effectiveLastComment = getEffectiveLastComment(effectiveComments, pr.last_comment);
+  const hasTwoOthers = hasTwoConsecutiveCommentsByOthers(
+    pr,
+    currentUserLogin,
+    effectiveComments,
+    effectiveLastComment
+  );
 
-  const lastCommentAuthor = effectiveLastComment?.user.login || 'Unknown';
-  const lastCommentBody = effectiveLastComment?.body || 'No recent comment';
+  const evalOptions: GateEvaluationOptions = {
+    includePrompt: options.includePrompt ?? true,
+    prefilteredComments: effectiveComments,
+    prefilteredLastComment: effectiveLastComment,
+    hasTwoConsecutiveOthers: hasTwoOthers,
+  };
+
+  const evaluatedGates = rules.map((rule) =>
+    evaluateGateRule(rule, pr, currentUserLogin, defaultAgent, evalOptions)
+  );
+
+  const needsAttention = isPrAwaitingComment(
+    pr,
+    currentUserLogin,
+    effectiveComments,
+    effectiveLastComment,
+    hasTwoOthers
+  );
+
+  return { evaluatedGates, needsAttention };
+}
+
+export function formatPromptTemplate(
+  template: string,
+  pr: PullRequest,
+  options: {
+    prefilteredComments?: PRComment[];
+    prefilteredLastComment?: PRComment;
+  } = {}
+): string {
+  const needsCommentsSummary = template.includes('{comments_summary}');
+  const needsLastComment =
+    template.includes('{last_comment_author}') || template.includes('{last_comment_body}');
+
+  let effectiveComments: PRComment[] | undefined = options.prefilteredComments;
+  let effectiveLastComment: PRComment | undefined = options.prefilteredLastComment;
+
+  if ((needsCommentsSummary || needsLastComment) && !effectiveComments) {
+    effectiveComments = filterNonBotComments(pr.comments || []);
+  }
+  if (needsLastComment && !('prefilteredLastComment' in options)) {
+    effectiveLastComment = getEffectiveLastComment(effectiveComments || [], pr.last_comment);
+  }
+
   const authorLogin = pr.user?.login || 'unknown';
   const authorMention = `@${authorLogin}`;
 
-  const commentsSummary = effectiveComments
-    .map((c) => `- @${c.user.login} (${c.is_review_comment ? 'Code Review' : 'Comment'}): ${c.body}`)
-    .join('\n');
-
-  return template
+  let result = template
     .replace(/{pr_number}/g, String(pr.number))
     .replace(/{pr_title}/g, pr.title)
     .replace(/{pr_body}/g, pr.body || '')
@@ -169,10 +246,24 @@ export function formatPromptTemplate(template: string, pr: PullRequest): string 
     .replace(/@\s*pr_author\b/g, authorMention)
     .replace(/@\s*{author}/g, authorMention)
     .replace(/@\s*author\b/g, authorMention)
-    .replace(/{author}/g, authorLogin)
-    .replace(/{last_comment_author}/g, lastCommentAuthor)
-    .replace(/{last_comment_body}/g, lastCommentBody)
-    .replace(/{comments_summary}/g, commentsSummary || 'No comments');
+    .replace(/{author}/g, authorLogin);
+
+  if (needsLastComment) {
+    const lastCommentAuthor = effectiveLastComment?.user.login || 'Unknown';
+    const lastCommentBody = effectiveLastComment?.body || 'No recent comment';
+    result = result
+      .replace(/{last_comment_author}/g, lastCommentAuthor)
+      .replace(/{last_comment_body}/g, lastCommentBody);
+  }
+
+  if (needsCommentsSummary) {
+    const commentsSummary = (effectiveComments || [])
+      .map((c) => `- @${c.user.login} (${c.is_review_comment ? 'Code Review' : 'Comment'}): ${c.body}`)
+      .join('\n');
+    result = result.replace(/{comments_summary}/g, commentsSummary || 'No comments');
+  }
+
+  return result;
 }
 
 /**
@@ -187,11 +278,13 @@ export function formatPromptTemplate(template: string, pr: PullRequest): string 
  */
 export function hasTwoConsecutiveCommentsByOthers(
   pr: PullRequest,
-  currentUserLogin: string | null
+  currentUserLogin: string | null,
+  prefilteredComments?: PRComment[],
+  prefilteredLastComment?: PRComment
 ): boolean {
   if (!currentUserLogin) return false;
   const effectiveUser = currentUserLogin.toLowerCase();
-  const comments = filterNonBotComments(pr.comments || []);
+  const comments = prefilteredComments ?? filterNonBotComments(pr.comments || []);
   if (comments.length < 2) return false;
 
   // Find the index of the last comment made by the current user
@@ -207,7 +300,10 @@ export function hasTwoConsecutiveCommentsByOthers(
   // is from the PR author, the author has addressed feedback.
   // The PR is therefore relevant again for the current user's follow-up review.
   const prAuthor = pr.user.login.toLowerCase();
-  const effectiveLast = getEffectiveLastComment(comments, pr.last_comment);
+  const effectiveLast =
+    prefilteredLastComment !== undefined
+      ? prefilteredLastComment
+      : getEffectiveLastComment(comments, pr.last_comment);
   const lastCommentUser = (effectiveLast?.user?.login ?? comments[comments.length - 1]?.user?.login)?.toLowerCase();
   if (lastUserCommentIndex >= 0 && lastCommentUser === prAuthor) {
     return false;
@@ -235,13 +331,19 @@ export function hasTwoConsecutiveCommentsByOthers(
 
 export function isPrAwaitingComment(
   pr: PullRequest,
-  currentUserLogin: string | null
+  currentUserLogin: string | null,
+  prefilteredComments?: PRComment[],
+  prefilteredLastComment?: PRComment,
+  prefilteredHasTwoOthers?: boolean
 ): boolean {
   if (!currentUserLogin) return true;
 
   const effectiveUser = currentUserLogin.toLowerCase();
   const isOwner = pr.user.login.toLowerCase() === effectiveUser;
-  const effectiveLastComment = getEffectiveLastComment(pr.comments, pr.last_comment);
+  const effectiveLastComment =
+    prefilteredLastComment !== undefined
+      ? prefilteredLastComment
+      : getEffectiveLastComment(prefilteredComments ?? pr.comments, pr.last_comment);
   const lastUser = (effectiveLastComment?.user.login ?? pr.user.login).toLowerCase();
   const notOurLatestComment = lastUser !== effectiveUser;
   const userOwnedWithConflict = isOwner && (Boolean(pr.has_merge_conflicts) || pr.mergeable_state === 'dirty');
@@ -252,7 +354,10 @@ export function isPrAwaitingComment(
   // On PRs not owned by the current user: if there have been two comments in a row
   // by 2 other individual users that are NOT the current user, it has probably
   // been reviewed by someone else, so it is not awaiting our comment.
-  if (!isOwner && hasTwoConsecutiveCommentsByOthers(pr, currentUserLogin)) {
+  const twoOthers =
+    prefilteredHasTwoOthers ??
+    hasTwoConsecutiveCommentsByOthers(pr, currentUserLogin, prefilteredComments, effectiveLastComment);
+  if (!isOwner && twoOthers) {
     return false;
   }
 

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { evaluateGateRule, formatPromptTemplate, hasTwoConsecutiveCommentsByOthers, isPrAwaitingComment } from '../logicGates.ts';
+import { evaluateGateRule, evaluateGatesForPR, formatPromptTemplate, hasTwoConsecutiveCommentsByOthers, isPrAwaitingComment } from '../logicGates.ts';
 import type { LogicalGateRule, PullRequest } from '../../types/index.ts';
 
 describe('Logic Gates Evaluator', () => {
@@ -843,6 +843,30 @@ describe('Logic Gates Evaluator', () => {
       // Netlify bot must NOT count as a second reviewer!
       const twoReviewers = hasTwoConsecutiveCommentsByOthers(prWithReviewerAndBot, 'alice');
       assert.strictEqual(twoReviewers, false);
+    });
+  });
+
+  describe('evaluateGatesForPR lazy prompt optimization', () => {
+    it('evaluates rules and needsAttention with empty prompts when includePrompt is false', () => {
+      const { evaluatedGates, needsAttention } = evaluateGatesForPR(
+        [sampleRule],
+        dummyPR,
+        'alice',
+        'codex',
+        { includePrompt: false }
+      );
+      assert.strictEqual(needsAttention, true);
+      assert.strictEqual(evaluatedGates.length, 1);
+      assert.strictEqual(evaluatedGates[0]?.passed, true);
+      assert.strictEqual(evaluatedGates[0]?.generatedPrompt, '');
+    });
+
+    it('still formats {comments_summary} when explicitly present in template', () => {
+      const rendered = formatPromptTemplate('Summary:\n{comments_summary}', dummyPR);
+      assert.strictEqual(
+        rendered,
+        'Summary:\n- @bob (Comment): Please add unit tests for this change'
+      );
     });
   });
 });

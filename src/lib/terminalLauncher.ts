@@ -302,10 +302,11 @@ fi
     await writeFile(runnerScript, runnerContent, { mode: 0o755, encoding: 'utf8' });
 
     // Safety fallback cleanup in case terminal launch fails or script is not executed
-    setTimeout(() => {
+    const cleanupTimer = setTimeout(() => {
       unlink(promptFile).catch(() => {});
       unlink(runnerScript).catch(() => {});
     }, 60000);
+    cleanupTimer.unref?.();
 
     const cliCommand = `bash "${runnerScript}"`;
 

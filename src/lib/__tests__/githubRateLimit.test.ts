@@ -6,6 +6,9 @@ import {
   getRateLimitStatus,
   setRateLimitResetTimestamp,
   clearGitHubCache,
+  getGitHubCacheStats,
+  getCachedPullRequest,
+  getRepoPullRequests,
   GitHubRateLimitError,
 } from '../github.ts';
 
@@ -154,6 +157,107 @@ describe('GitHub Rate Limit and Concurrency Protections', () => {
       const err = new GitHubRateLimitError('Secondary limit', resetDate, true);
       assert.strictEqual(err.isSecondary, true);
       assert.strictEqual(err.resetMinutes, 1);
+    });
+  });
+
+  describe('prDetailsCache eviction and bounded memory behavior', () => {
+    it('overwrites stale updatedAt snapshots and prunes closed PRs instead of leaking', async () => {
+      const originalFetch = globalThis.fetch;
+      let openPrs = [
+        {
+          id: 1,
+          number: 10,
+          title: 'PR 10',
+          body: 'body 10',
+          state: 'open',
+          draft: false,
+          html_url: 'https://github.com/org/repo/pull/10',
+          created_at: '2026-08-12T10:00:00Z',
+          updated_at: '2026-08-12T10:00:00Z',
+          head: { ref: 'feat-10', sha: 'sha10' },
+          base: { ref: 'main' },
+          user: { login: 'alice', avatar_url: '', html_url: '' },
+        },
+        {
+          id: 2,
+          number: 11,
+          title: 'PR 11',
+          body: 'body 11',
+          state: 'open',
+          draft: false,
+          html_url: 'https://github.com/org/repo/pull/11',
+          created_at: '2026-08-12T10:00:00Z',
+          updated_at: '2026-08-12T10:00:00Z',
+          head: { ref: 'feat-11', sha: 'sha11' },
+          base: { ref: 'main' },
+          user: { login: 'bob', avatar_url: '', html_url: '' },
+        },
+      ];
+
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = String(input);
+        const makeJsonResponse = (body: unknown) =>
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+
+        if (url.includes('/graphql')) {
+          return makeJsonResponse({
+            data: {
+              repository: {
+                pullRequests: {
+                  nodes: openPrs.map((p) => ({
+                    number: p.number,
+                    mergeable: 'MERGEABLE',
+                    mergeStateStatus: 'CLEAN',
+                  })),
+                },
+              },
+            },
+          });
+        }
+        if (url.includes('/pulls?state=open')) return makeJsonResponse(openPrs);
+        if (url.includes('/pulls/10') && !url.includes('/comments') && !url.includes('/reviews') && !url.includes('/commits')) {
+          return makeJsonResponse({ mergeable: true, mergeable_state: 'clean' });
+        }
+        if (url.includes('/pulls/11') && !url.includes('/comments') && !url.includes('/reviews') && !url.includes('/commits')) {
+          return makeJsonResponse({ mergeable: true, mergeable_state: 'clean' });
+        }
+        if (url.includes('/issues/10/comments')) {
+          return makeJsonResponse([
+            {
+              id: 500,
+              user: { login: 'alice', avatar_url: '', html_url: '', type: 'User' },
+              body: 'Human comment',
+              created_at: '2026-08-12T10:05:00Z',
+              updated_at: '2026-08-12T10:05:00Z',
+              html_url: '',
+              performed_via_github_app: { slug: 'some-app', name: 'Large App Metadata' },
+            },
+          ]);
+        }
+        if (url.includes('/status')) return makeJsonResponse({ state: 'success' });
+        return makeJsonResponse([]);
+      }) as typeof fetch;
+
+      try {
+        await getRepoPullRequests('org/repo', 'test-token', true);
+        assert.strictEqual(getGitHubCacheStats().prDetailsSize, 2);
+        const cached10 = getCachedPullRequest('org/repo', 10);
+        assert.ok(cached10);
+        assert.strictEqual('performed_via_github_app' in (cached10.comments[0] || {}), false);
+
+        // Update PR #10's updated_at and close PR #11: cache must stay at size 1 (not grow to 3!)
+        openPrs = [{ ...openPrs[0], updated_at: '2026-08-12T12:00:00Z' }];
+        await getRepoPullRequests('org/repo', 'test-token', true);
+
+        assert.strictEqual(getGitHubCacheStats().prDetailsSize, 1);
+        assert.strictEqual(getCachedPullRequest('org/repo', 10)?.updated_at, '2026-08-12T12:00:00Z');
+        assert.strictEqual(getCachedPullRequest('org/repo', 11), undefined);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 });

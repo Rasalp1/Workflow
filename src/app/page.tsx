@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
-import { ActiveAgentInfo, AgentType, AppConfig, EvaluatedGateResult, LogicalGateRule, PRWithGates } from '@/types';
-import { isPrAwaitingComment } from '@/lib/logicGates';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { ActiveAgentInfo, AgentType, AppConfig, CompactEvaluatedGate, EvaluatedGateResult, LogicalGateRule, PRWithGates } from '@/types';
+import { formatPromptTemplate, isPrAwaitingComment } from '@/lib/logicGates';
 import { getEffectiveLastComment } from '@/lib/botDetection';
 import { Button } from '@/components/ui/Button';
 import { Notice } from '@/components/ui/Notice';
@@ -69,6 +69,10 @@ export default function Dashboard() {
   // Column Repositories State
   const [col1Repo, setCol1Repo] = useState<string>('');
   const [col2Repo, setCol2Repo] = useState<string>('');
+  const col1RepoRef = useRef<string>('');
+  useEffect(() => {
+    col1RepoRef.current = col1Repo;
+  }, [col1Repo]);
 
   // Modals
   const [activeGateTrigger, setActiveGateTrigger] = useState<{
@@ -84,7 +88,17 @@ export default function Dashboard() {
   const [rules, setRules] = useState<LogicalGateRule[]>([]);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
-  const handleClearActiveAgent = (cardId: string) => {
+  const configRef = useRef<AppConfig | null>(null);
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  const prsWithGatesRef = useRef<PRWithGates[]>([]);
+  useEffect(() => {
+    prsWithGatesRef.current = prsWithGates;
+  }, [prsWithGates]);
+
+  const handleClearActiveAgent = useCallback((cardId: string) => {
     const cardKey = cardId.replace(/^(col1-|col2-)/, '');
     setActiveAgentPRs((prev) => {
       const updated = { ...prev };
@@ -92,24 +106,24 @@ export default function Dashboard() {
       return updated;
     });
     syncActiveAgents({ action: 'clear', cardId: cardKey });
-  };
+  }, [syncActiveAgents]);
 
-  const handleStartActiveAgent = (cardId: string, agent: AgentType = 'codex') => {
+  const handleStartActiveAgent = useCallback((cardId: string, agent: AgentType = 'codex') => {
     const cardKey = cardId.replace(/^(col1-|col2-)/, '');
     setActiveAgentPRs((prev) => ({
       ...prev,
       [cardKey]: { agent, timestamp: Date.now() },
     }));
     syncActiveAgents({ action: 'start', cardId: cardKey, agent });
-  };
+  }, [syncActiveAgents]);
 
-  const handleClearAllActiveAgents = () => {
+  const handleClearAllActiveAgents = useCallback(() => {
     setActiveAgentPRs({});
     syncActiveAgents({ action: 'clearAll' });
-  };
+  }, [syncActiveAgents]);
 
   // Fetch PRs and Gates
-  const fetchPRs = React.useCallback(async (force = false) => {
+  const fetchPRs = useCallback(async (force = false) => {
     setIsLoading(true);
     setError(null);
     try {
@@ -121,10 +135,44 @@ export default function Dashboard() {
         setError(data.error);
         setPrsWithGates([]);
       } else {
-        const fetchedPRs = data.prsWithGates || [];
+        const responseRules: LogicalGateRule[] = Array.isArray(data.rules) ? data.rules : [];
+        const rulesById = new Map<string, LogicalGateRule>(
+          responseRules.map((rule) => [rule.id, rule])
+        );
+        if (responseRules.length > 0) {
+          setRules(responseRules);
+        }
+
+        const rawFetchedPRs = Array.isArray(data.prsWithGates) ? data.prsWithGates : [];
+        const hydratedPRs: PRWithGates[] = rawFetchedPRs.map(
+          (item: {
+            pr: PRWithGates['pr'];
+            evaluatedGates: Array<EvaluatedGateResult | CompactEvaluatedGate>;
+            needsAttention?: boolean;
+          }) => ({
+            ...item,
+            evaluatedGates: (item.evaluatedGates || [])
+              .map((gate) => {
+                if ('rule' in gate && gate.rule) {
+                  return gate;
+                }
+                const compact = gate as CompactEvaluatedGate;
+                const matchedRule = rulesById.get(compact.ruleId);
+                if (!matchedRule) return null;
+                return {
+                  rule: matchedRule,
+                  passed: compact.passed,
+                  generatedPrompt: '',
+                  targetAgent: compact.targetAgent,
+                } satisfies EvaluatedGateResult;
+              })
+              .filter((gate): gate is EvaluatedGateResult => gate !== null),
+          })
+        );
+
         const repos = data.monitoredRepos || [];
         const fetchedCurrentUser = data.currentUser || null;
-        setPrsWithGates(fetchedPRs);
+        setPrsWithGates(hydratedPRs);
         setMonitoredRepos(repos);
         setCurrentUser(fetchedCurrentUser);
 
@@ -137,11 +185,14 @@ export default function Dashboard() {
         if (repos.length > 0) {
           const defaultCol1 = repos[0];
           const defaultCol2 = repos.length > 1 ? repos[1] : repos[0];
-          setCol1Repo((prev) => (prev && repos.includes(prev) ? prev : defaultCol1));
+          const resolvedCol1 =
+            col1RepoRef.current && repos.includes(col1RepoRef.current)
+              ? col1RepoRef.current
+              : defaultCol1;
+          setCol1Repo(resolvedCol1);
           setCol2Repo((prev) => {
-            const c1 = col1Repo || defaultCol1;
-            if (prev && repos.includes(prev) && prev !== c1) return prev;
-            return defaultCol2 !== c1 ? defaultCol2 : defaultCol1;
+            if (prev && repos.includes(prev) && prev !== resolvedCol1) return prev;
+            return defaultCol2 !== resolvedCol1 ? defaultCol2 : defaultCol1;
           });
         }
       }
@@ -151,7 +202,7 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [col1Repo]);
+  }, []);
 
   // Fetch App Config & Rules
   const fetchConfigAndRules = React.useCallback(async () => {
@@ -267,22 +318,23 @@ export default function Dashboard() {
   }, [col2PRs, activeCol2PRId]);
 
 
-  // Scroll listeners to sync active PR highlight as the user scrolls each column
+  // Scroll listeners to sync active PR highlight as the user scrolls each column (rAF-throttled)
   useEffect(() => {
     const container = col1ScrollRef.current;
     if (!container || col1PRs.length === 0) return;
 
+    let rafId: number | null = null;
     const updateActive = () => {
+      rafId = null;
       const containerTop = container.getBoundingClientRect().top;
       let bestId: string | null = null;
       let bestScore = -Infinity;
 
-      col1PRs.forEach(({ pr }) => {
+      for (const { pr } of col1PRs) {
         const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
         const el = document.getElementById(`col1-${cardId}`);
-        if (!el) return;
+        if (!el) continue;
         const rect = el.getBoundingClientRect();
-        // How much of the card is visible inside the container
         const visibleTop = Math.max(rect.top, containerTop);
         const visibleBottom = Math.min(rect.bottom, containerTop + container.clientHeight);
         const visibleHeight = Math.max(0, visibleBottom - visibleTop);
@@ -290,31 +342,43 @@ export default function Dashboard() {
           bestScore = visibleHeight;
           bestId = cardId;
         }
-      });
+      }
 
-      if (bestId) setActiveCol1PRId(bestId);
+      if (bestId) {
+        setActiveCol1PRId((prev) => (prev === bestId ? prev : bestId));
+      }
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(updateActive);
     };
 
     // Run once immediately to set initial state
     updateActive();
-    container.addEventListener('scroll', updateActive, { passive: true });
-    return () => container.removeEventListener('scroll', updateActive);
+    container.addEventListener('scroll', scheduleUpdate, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', scheduleUpdate);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+    };
   }, [col1PRs]);
 
-  // Scroll listeners to sync Column 2 active state
+  // Scroll listeners to sync Column 2 active state (rAF-throttled)
   useEffect(() => {
     const container = col2ScrollRef.current;
     if (!container || col2PRs.length === 0) return;
 
+    let rafId: number | null = null;
     const updateActive = () => {
+      rafId = null;
       const containerTop = container.getBoundingClientRect().top;
       let bestId: string | null = null;
       let bestScore = -Infinity;
 
-      col2PRs.forEach(({ pr }) => {
+      for (const { pr } of col2PRs) {
         const cardId = `pr-card-${pr.repo_full_name}-${pr.number}`;
         const el = document.getElementById(`col2-${cardId}`);
-        if (!el) return;
+        if (!el) continue;
         const rect = el.getBoundingClientRect();
         const visibleTop = Math.max(rect.top, containerTop);
         const visibleBottom = Math.min(rect.bottom, containerTop + container.clientHeight);
@@ -323,14 +387,24 @@ export default function Dashboard() {
           bestScore = visibleHeight;
           bestId = cardId;
         }
-      });
+      }
 
-      if (bestId) setActiveCol2PRId(bestId);
+      if (bestId) {
+        setActiveCol2PRId((prev) => (prev === bestId ? prev : bestId));
+      }
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(updateActive);
     };
 
     updateActive();
-    container.addEventListener('scroll', updateActive, { passive: true });
-    return () => container.removeEventListener('scroll', updateActive);
+    container.addEventListener('scroll', scheduleUpdate, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', scheduleUpdate);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+    };
   }, [col2PRs]);
 
   const handleSelectPR = (cardId: string, position: 'top' | 'bottom' = 'bottom') => {
@@ -443,7 +517,7 @@ export default function Dashboard() {
 
   const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
-  const handleConfirmSpawn = async (payload: {
+  const handleConfirmSpawn = useCallback(async (payload: {
     repoFullName: string;
     localPath: string;
     branchName?: string;
@@ -464,7 +538,7 @@ export default function Dashboard() {
 
     let targetCardId = payload.cardId;
     if (!targetCardId && payload.repoFullName && payload.branchName) {
-      const found = prsWithGates.find(
+      const found = prsWithGatesRef.current.find(
         (item) => item.pr.repo_full_name === payload.repoFullName && item.pr.head.ref === payload.branchName
       );
       if (found) {
@@ -482,11 +556,20 @@ export default function Dashboard() {
       }));
       syncActiveAgents({ action: 'start', cardId: cardKey, agent: payload.agent, branch: payload.branchName });
     }
-  };
+  }, [syncActiveAgents]);
 
-  const handleTriggerGate = async (prWithGates: PRWithGates, gateResult: EvaluatedGateResult) => {
-    if (config?.directAgentSpawn) {
-      if (gateResult.rule.actionType === 'undraft_pr') {
+  const handleTriggerGate = useCallback(async (prWithGates: PRWithGates, gateResult: EvaluatedGateResult) => {
+    // Lazily format the prompt on demand rather than pre-rendering every PR x rule on every poll.
+    const resolvedGateResult: EvaluatedGateResult =
+      gateResult.generatedPrompt || !gateResult.rule.promptTemplate
+        ? gateResult
+        : {
+            ...gateResult,
+            generatedPrompt: formatPromptTemplate(gateResult.rule.promptTemplate, prWithGates.pr),
+          };
+
+    if (configRef.current?.directAgentSpawn) {
+      if (resolvedGateResult.rule.actionType === 'undraft_pr') {
         try {
           setActionBanner({ type: 'info', message: `Marking PR #${prWithGates.pr.number} as ready for review...` });
           const res = await fetch('/api/prs/undraft', {
@@ -508,7 +591,7 @@ export default function Dashboard() {
           const msg = err instanceof Error ? err.message : 'Action failed';
           setActionBanner({ type: 'error', message: msg });
         }
-      } else if (gateResult.rule.actionType === 'post_comment') {
+      } else if (resolvedGateResult.rule.actionType === 'post_comment') {
         try {
           setActionBanner({ type: 'info', message: `Posting GitHub comment on PR #${prWithGates.pr.number}...` });
           const res = await fetch('/api/prs/comment', {
@@ -517,7 +600,7 @@ export default function Dashboard() {
             body: JSON.stringify({
               repoFullName: prWithGates.pr.repo_full_name,
               prNumber: prWithGates.pr.number,
-              commentBody: gateResult.generatedPrompt,
+              commentBody: resolvedGateResult.generatedPrompt,
             }),
           });
           const data = await res.json();
@@ -533,18 +616,19 @@ export default function Dashboard() {
         }
       } else {
         try {
-          setActionBanner({ type: 'info', message: `Launching ${gateResult.targetAgent} agent in Antigravity IDE...` });
+          setActionBanner({ type: 'info', message: `Launching ${resolvedGateResult.targetAgent} agent in Antigravity IDE...` });
           await handleConfirmSpawn({
             repoFullName: prWithGates.pr.repo_full_name,
             localPath: prWithGates.pr.local_path || '',
             branchName: prWithGates.pr.head.ref,
-            agent: gateResult.targetAgent,
-            prompt: gateResult.generatedPrompt,
+            baseBranch: prWithGates.pr.base.ref,
+            agent: resolvedGateResult.targetAgent,
+            prompt: resolvedGateResult.generatedPrompt,
             cardId: `pr-card-${prWithGates.pr.repo_full_name}-${prWithGates.pr.number}`,
           });
           setActionBanner({
             type: 'success',
-            message: `Launched ${gateResult.targetAgent} agent in Antigravity IDE terminal for branch "${prWithGates.pr.head.ref}"!`,
+            message: `Launched ${resolvedGateResult.targetAgent} agent in Antigravity IDE terminal for branch "${prWithGates.pr.head.ref}"!`,
           });
           setTimeout(() => setActionBanner(null), 6000);
         } catch (err: unknown) {
@@ -553,11 +637,11 @@ export default function Dashboard() {
         }
       }
     } else {
-      setActiveGateTrigger({ prWithGates, gateResult });
+      setActiveGateTrigger({ prWithGates, gateResult: resolvedGateResult });
     }
-  };
+  }, [fetchPRs, handleConfirmSpawn]);
 
-  const handleMergePR = async (prWithGates: PRWithGates) => {
+  const handleMergePR = useCallback(async (prWithGates: PRWithGates) => {
     try {
       setActionBanner({ type: 'info', message: `Merging PR #${prWithGates.pr.number} into ${prWithGates.pr.base.ref}...` });
       const res = await fetch('/api/prs/merge', {
@@ -584,13 +668,13 @@ export default function Dashboard() {
       setActionBanner({ type: 'error', message: msg });
       throw err;
     }
-  };
+  }, [fetchPRs]);
 
-  const handleOpenWorktree = async (prWithGates: PRWithGates) => {
+  const handleOpenWorktree = useCallback(async (prWithGates: PRWithGates) => {
     try {
       const preferredAgent =
         prWithGates.evaluatedGates.find((g) => g.passed && g.targetAgent)?.targetAgent ||
-        config?.defaultAgent ||
+        configRef.current?.defaultAgent ||
         'codex';
 
       setActionBanner({
@@ -637,7 +721,7 @@ export default function Dashboard() {
       setActionBanner({ type: 'error', message: msg });
       throw err;
     }
-  };
+  }, []);
 
   const handleConfirmCloseAllWorktrees = async () => {
     setIsClosingWorktrees(true);
@@ -666,43 +750,42 @@ export default function Dashboard() {
   };
 
   // Count & List PRs awaiting our comment or action (including user-owned PRs with merge conflicts)
-  const targetUser = currentUser || null;
-  const prsAwaitingOurComment = searchFilteredPRs.filter(({ pr }) =>
-    isPrAwaitingComment(pr, targetUser)
-  );
+  const { prsAwaitingOurComment, awaitingCommentItems, theirsToHandleItems } = useMemo(() => {
+    const targetUser = currentUser || null;
+    const awaiting: PRWithGates[] = [];
+    const awaitingReposMap: Record<string, { number: number; title: string; branchName: string; cardId: string; hasMergeConflicts: boolean }[]> = {};
+    const theirsReposMap: Record<string, { number: number; title: string; branchName: string; cardId: string; hasMergeConflicts: boolean }[]> = {};
 
-  // Build awaiting-comment & theirs-to-handle items for Header popover
-  const theirsToHandlePRs = searchFilteredPRs.filter(({ pr }) =>
-    !isPrAwaitingComment(pr, targetUser)
-  );
+    for (const item of searchFilteredPRs) {
+      const { pr } = item;
+      const needsAttention =
+        typeof item.needsAttention === 'boolean'
+          ? item.needsAttention
+          : isPrAwaitingComment(pr, targetUser);
+      const entry = {
+        number: pr.number,
+        title: pr.title,
+        branchName: pr.head.ref,
+        cardId: `pr-card-${pr.repo_full_name}-${pr.number}`,
+        hasMergeConflicts: Boolean(pr.has_merge_conflicts || pr.mergeable_state === 'dirty'),
+      };
+      const key = pr.repo_full_name;
+      if (needsAttention) {
+        awaiting.push(item);
+        if (!awaitingReposMap[key]) awaitingReposMap[key] = [];
+        awaitingReposMap[key].push(entry);
+      } else {
+        if (!theirsReposMap[key]) theirsReposMap[key] = [];
+        theirsReposMap[key].push(entry);
+      }
+    }
 
-  const awaitingReposMap: Record<string, { number: number; title: string; branchName: string; cardId: string; hasMergeConflicts: boolean }[]> = {};
-  prsAwaitingOurComment.forEach(({ pr }) => {
-    const key = pr.repo_full_name;
-    if (!awaitingReposMap[key]) awaitingReposMap[key] = [];
-    awaitingReposMap[key].push({
-      number: pr.number,
-      title: pr.title,
-      branchName: pr.head.ref,
-      cardId: `pr-card-${pr.repo_full_name}-${pr.number}`,
-      hasMergeConflicts: Boolean(pr.has_merge_conflicts || pr.mergeable_state === 'dirty'),
-    });
-  });
-  const awaitingCommentItems = Object.entries(awaitingReposMap).map(([repoName, prs]) => ({ repoName, prs }));
-
-  const theirsReposMap: Record<string, { number: number; title: string; branchName: string; cardId: string; hasMergeConflicts: boolean }[]> = {};
-  theirsToHandlePRs.forEach(({ pr }) => {
-    const key = pr.repo_full_name;
-    if (!theirsReposMap[key]) theirsReposMap[key] = [];
-    theirsReposMap[key].push({
-      number: pr.number,
-      title: pr.title,
-      branchName: pr.head.ref,
-      cardId: `pr-card-${pr.repo_full_name}-${pr.number}`,
-      hasMergeConflicts: Boolean(pr.has_merge_conflicts || pr.mergeable_state === 'dirty'),
-    });
-  });
-  const theirsToHandleItems = Object.entries(theirsReposMap).map(([repoName, prs]) => ({ repoName, prs }));
+    return {
+      prsAwaitingOurComment: awaiting,
+      awaitingCommentItems: Object.entries(awaitingReposMap).map(([repoName, prs]) => ({ repoName, prs })),
+      theirsToHandleItems: Object.entries(theirsReposMap).map(([repoName, prs]) => ({ repoName, prs })),
+    };
+  }, [searchFilteredPRs, currentUser]);
 
   return (
     <div className="workflow-app">
